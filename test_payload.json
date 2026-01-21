@@ -1,0 +1,22 @@
+{
+    "logs": [
+        {
+            "userName": "Test User",
+            "date": "2024-03-01",
+            "startTime": "09:00",
+            "endTime": "18:00",
+            "workDuration": 8,
+            "overtime": 0,
+            "status": "NORMAL"
+        },
+        {
+            "userName": "Test User",
+            "date": "2024-03-02",
+            "startTime": "09:00",
+            "endTime": "22:00",
+            "workDuration": 12,
+            "overtime": 4,
+            "status": "NORMAL"
+        }
+    ]
+}

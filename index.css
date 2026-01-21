@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+@theme {
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+
+    to {
+      height: 0;
+    }
+  }
+}
+
+:root {
+  /* Pro Minimalist Palette - Apple Style */
+  /* Background: Pure White */
+  --background: 0 0% 100%;
+  /* Foreground: Soft Black */
+  --foreground: 240 5% 10%;
+
+  /* Card: White */
+  --card: 0 0% 100%;
+  --card-foreground: 240 5% 10%;
+
+  /* Popover: White */
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 5% 10%;
+
+  /* Eluon Brand Brown: #5A2F14 -> HSL(23, 64%, 22%) */
+  --primary: 23 64% 22%;
+  --primary-foreground: 0 0% 100%;
+
+  /* Secondary: Very Light Gray for subdued areas */
+  --secondary: 240 4% 96%;
+  --secondary-foreground: 240 5% 10%;
+
+  /* Muted: Soft Grays for text */
+  --muted: 240 4% 96%;
+  --muted-foreground: 240 4% 45%;
+
+  /* Accent: Subtle blue-gray for hover states */
+  --accent: 240 5% 96%;
+  --accent-foreground: 240 5% 10%;
+
+  /* Destructive: Refined Red */
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
+
+  /* Border: Very subtle, barely there */
+  --border: 240 5% 92%;
+  /* Input: Slightly stronger than border */
+  --input: 240 5% 92%;
+
+  /* Ring: Focus ring color */
+  --ring: 240 5% 10%;
+
+  --radius: 0.5rem;
+  /* 8px - Cleaner, sharper than 0.75rem */
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Utilities */
+.glass {
+  /* Removed heavy blur. Keeping it very subtle or solid. */
+  @apply bg-white/80 backdrop-blur-md border-b border-border;
+}
+
+.layout-border {
+  @apply border-r border-border;
+}

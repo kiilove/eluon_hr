@@ -1,0 +1,5 @@
+{
+  "name": "AuditReady: HR Data Cleansing",
+  "description": "A professional tool for HR managers to optimize attendance data for 52-hour workweek compliance, featuring automated cleansing logic, audit trail generation, and risk visualization.",
+  "requestFramePermissions": []
+}

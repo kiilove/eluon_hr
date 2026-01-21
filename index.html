@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ELUON - HR System</title>
+  <script>
+    window.global = window;
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            background: "hsl(var(--background))",
+            foreground: "hsl(var(--foreground))",
+            card: "hsl(var(--card))",
+            "card-foreground": "hsl(var(--card-foreground))",
+            popover: "hsl(var(--popover))",
+            "popover-foreground": "hsl(var(--popover-foreground))",
+            primary: "hsl(var(--primary))",
+            "primary-foreground": "hsl(var(--primary-foreground))",
+            secondary: "hsl(var(--secondary))",
+            "secondary-foreground": "hsl(var(--secondary-foreground))",
+            muted: "hsl(var(--muted))",
+            "muted-foreground": "hsl(var(--muted-foreground))",
+            accent: "hsl(var(--accent))",
+            "accent-foreground": "hsl(var(--accent-foreground))",
+            destructive: "hsl(var(--destructive))",
+            "destructive-foreground": "hsl(var(--destructive-foreground))",
+            border: "hsl(var(--border))",
+            input: "hsl(var(--input))",
+            ring: "hsl(var(--ring))",
+          },
+          borderRadius: {
+            lg: "var(--radius)",
+            md: "calc(var(--radius) - 2px)",
+            sm: "calc(var(--radius) - 4px)",
+          },
+        },
+      },
+    }
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #f8fafc;
+    }
+
+    /* Custom Scrollbar */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background-color: #cbd5e1;
+      border-radius: 20px;
+    }
+
+    @keyframes fade-in {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    .animate-fade-in {
+      animation: fade-in 0.5s ease-out forwards;
+    }
+
+    @keyframes fade-in-up {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .animate-fade-in-up {
+      animation: fade-in-up 0.5s ease-out forwards;
+    }
+  </style>
+  <link rel="stylesheet" href="/index.css">
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+
+</html>
