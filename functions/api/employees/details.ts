@@ -38,13 +38,21 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
             ORDER BY effective_date DESC, created_at DESC
         `).bind(id).all();
 
+        // 5. Position History
+        const { results: positionHistory } = await context.env.DB.prepare(`
+            SELECT * FROM employee_position_history
+            WHERE employee_id = ?
+            ORDER BY effective_date DESC, created_at DESC
+        `).bind(id).all();
+
         return new Response(JSON.stringify({
             success: true,
             data: {
                 employee,
                 memos: memos || [],
                 wages: wages || [],
-                status_history: statusHistory || []
+                status_history: statusHistory || [],
+                position_history: positionHistory || []
             }
         }), { headers: { "Content-Type": "application/json" } });
 

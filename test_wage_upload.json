@@ -1,0 +1,19 @@
+{
+    "effectiveDate": "2026-01-01",
+    "companyId": "comp_eluon",
+    "items": [
+        {
+            "name": "테스트직원1",
+            "amount": 10000,
+            "department": "개발팀",
+            "position": "사원",
+            "employeeCode": "EMP001"
+        },
+        {
+            "name": "테스트직원2",
+            "amount": 12000,
+            "department": "영업팀",
+            "position": "대리"
+        }
+    ]
+}

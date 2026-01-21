@@ -75,14 +75,16 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({ setData, setStep, conf
             console.log("Debug: Detected TF User IDs:", Array.from(tfUserIds));
             console.log("Debug: Detected TF User Names:", tfNames);
 
+            // [DISABLED] Employee auto-creation moved to Hourly Wage Upload
+            // Attendance upload should NOT create employees anymore
+            /*
             import('../../lib/engine/employeeExtractor').then(({ EmployeeExtractor }) => {
-                // [Fix] Inject Company ID
                 const userStr = localStorage.getItem('user');
                 const userObj = userStr ? JSON.parse(userStr) : null;
                 const companyId = userObj?.company_id;
 
                 const employees = EmployeeExtractor.extractFromLogs(rawData, existingEmployees)
-                    .map(e => ({ ...e, companyId })); // Context Injection
+                    .map(e => ({ ...e, companyId }));
 
                 if (employees.length > 0) {
                     EmployeeExtractor.saveEmployees(employees).catch(err => console.warn("Auto-save employees failed:", err));
@@ -90,6 +92,8 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({ setData, setStep, conf
                     console.log("No new employees to save.");
                 }
             });
+            */
+
 
             // [NEW] Dynamic Holiday Init
             const years = new Set(rawData.map(d => new Date(d.date).getFullYear()));

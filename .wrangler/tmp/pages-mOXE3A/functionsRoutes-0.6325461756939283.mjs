@@ -11,6 +11,9 @@ import { onRequestGet as __api_dashboard_status_ts_onRequestGet } from "D:\\app3
 import { onRequestGet as __api_employees_details_ts_onRequestGet } from "D:\\app3\\auditready_-hr-data-cleansing\\functions\\api\\employees\\details.ts"
 import { onRequestDelete as __api_employees_memos_ts_onRequestDelete } from "D:\\app3\\auditready_-hr-data-cleansing\\functions\\api\\employees\\memos.ts"
 import { onRequestPost as __api_employees_memos_ts_onRequestPost } from "D:\\app3\\auditready_-hr-data-cleansing\\functions\\api\\employees\\memos.ts"
+import { onRequestDelete as __api_employees_position_history_ts_onRequestDelete } from "D:\\app3\\auditready_-hr-data-cleansing\\functions\\api\\employees\\position-history.ts"
+import { onRequestGet as __api_employees_position_history_ts_onRequestGet } from "D:\\app3\\auditready_-hr-data-cleansing\\functions\\api\\employees\\position-history.ts"
+import { onRequestPost as __api_employees_position_history_ts_onRequestPost } from "D:\\app3\\auditready_-hr-data-cleansing\\functions\\api\\employees\\position-history.ts"
 import { onRequestDelete as __api_employees_status_ts_onRequestDelete } from "D:\\app3\\auditready_-hr-data-cleansing\\functions\\api\\employees\\status.ts"
 import { onRequestGet as __api_employees_status_ts_onRequestGet } from "D:\\app3\\auditready_-hr-data-cleansing\\functions\\api\\employees\\status.ts"
 import { onRequestPost as __api_employees_status_ts_onRequestPost } from "D:\\app3\\auditready_-hr-data-cleansing\\functions\\api\\employees\\status.ts"
@@ -147,6 +150,27 @@ export const routes = [
       method: "POST",
       middlewares: [],
       modules: [__api_employees_memos_ts_onRequestPost],
+    },
+  {
+      routePath: "/api/employees/position-history",
+      mountPath: "/api/employees",
+      method: "DELETE",
+      middlewares: [],
+      modules: [__api_employees_position_history_ts_onRequestDelete],
+    },
+  {
+      routePath: "/api/employees/position-history",
+      mountPath: "/api/employees",
+      method: "GET",
+      middlewares: [],
+      modules: [__api_employees_position_history_ts_onRequestGet],
+    },
+  {
+      routePath: "/api/employees/position-history",
+      mountPath: "/api/employees",
+      method: "POST",
+      middlewares: [],
+      modules: [__api_employees_position_history_ts_onRequestPost],
     },
   {
       routePath: "/api/employees/status",

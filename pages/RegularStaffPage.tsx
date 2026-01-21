@@ -147,8 +147,8 @@ export const RegularStaffPage = () => {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [isuploading, setIsUploading] = useState(false);
     const [currentEmployee, setCurrentEmployee] = useState<Partial<Employee> | null>(null);
-    const [details, setDetails] = useState<{ memos: any[], wages: any[], status_history: any[] } | null>(null);
-    const [activeTab, setActiveTab] = useState<'info' | 'wage' | 'status'>('info');
+    const [details, setDetails] = useState<{ memos: any[], wages: any[], status_history: any[], position_history?: any[] } | null>(null);
+    const [activeTab, setActiveTab] = useState<'info' | 'wage' | 'status' | 'position'>('info');
     const [newMemo, setNewMemo] = useState("");
 
     // Wage Editing State
@@ -159,6 +159,12 @@ export const RegularStaffPage = () => {
     const [newStatus, setNewStatus] = useState("ACTIVE");
     const [newStatusDate, setNewStatusDate] = useState("");
     const [newStatusReason, setNewStatusReason] = useState("");
+
+    // Position History State
+    const [newPositionDate, setNewPositionDate] = useState("");
+    const [newPositionDept, setNewPositionDept] = useState("");
+    const [newPositionTitle, setNewPositionTitle] = useState("");
+    const [newPositionReason, setNewPositionReason] = useState("");
 
     const handleAddStatus = async () => {
         if (!currentEmployee?.id || !newStatus || !newStatusDate) {
@@ -191,6 +197,49 @@ export const RegularStaffPage = () => {
         if (!confirm("상태 이력을 삭제하시겠습니까?")) return;
         try {
             const res = await fetch(`/api/employees/status?id=${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                if (currentEmployee?.id) fetchDetails(currentEmployee.id);
+                fetchEmployees();
+            } else {
+                alert("삭제 실패");
+            }
+        } catch (e) { console.error(e); }
+    };
+
+    const handleAddPosition = async () => {
+        if (!currentEmployee?.id || !newPositionDate) {
+            alert("적용일을 입력해주세요.");
+            return;
+        }
+        try {
+            const res = await fetch('/api/employees/position-history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    employeeId: currentEmployee.id,
+                    department: newPositionDept || null,
+                    position: newPositionTitle || null,
+                    effectiveDate: newPositionDate,
+                    reason: newPositionReason || null
+                })
+            });
+            if (res.ok) {
+                setNewPositionDate("");
+                setNewPositionDept("");
+                setNewPositionTitle("");
+                setNewPositionReason("");
+                fetchDetails(currentEmployee.id);
+                fetchEmployees(); // Refresh to update current dept/position
+            } else {
+                alert("추가 실패");
+            }
+        } catch (e) { console.error(e); }
+    };
+
+    const handleDeletePosition = async (id: string) => {
+        if (!confirm("이력을 삭제하시겠습니까?")) return;
+        try {
+            const res = await fetch(`/api/employees/position-history?id=${id}`, { method: 'DELETE' });
             if (res.ok) {
                 if (currentEmployee?.id) fetchDetails(currentEmployee.id);
                 fetchEmployees();
@@ -315,6 +364,7 @@ export const RegularStaffPage = () => {
             const companyId = user.company_id || 'comp_eluon'; // Fallback
 
             const payload = { ...currentEmployee, companyId };
+            console.log('[RegularStaffPage] Saving employee:', payload);
 
             const res = await fetch(url, {
                 method,
@@ -322,14 +372,18 @@ export const RegularStaffPage = () => {
                 body: JSON.stringify(payload)
             });
 
-            if (!res.ok) throw new Error("Failed to save");
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
+                console.error('[RegularStaffPage] Save failed:', errorData);
+                throw new Error(errorData.error || `HTTP ${res.status}`);
+            }
 
             await fetchEmployees(); // Refresh
             setIsDialogOpen(false);
             setCurrentEmployee(null);
         } catch (error) {
-            console.error(error);
-            alert("저장에 실패했습니다.");
+            console.error('[RegularStaffPage] Error:', error);
+            alert(`저장에 실패했습니다: ${(error as Error).message}`);
         }
     };
 
@@ -779,6 +833,13 @@ export const RegularStaffPage = () => {
                         >
                             시급 이력
                         </button>
+                        <button
+                            className={cn("px-4 py-2 font-medium text-sm transition-colors border-b-2", activeTab === 'position' ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-500 hover:text-slate-700")}
+                            onClick={() => setActiveTab('position')}
+                            disabled={!currentEmployee?.id}
+                        >
+                            부서/직급 이력
+                        </button>
                     </div>
 
                     {activeTab === 'status' && (
@@ -1001,6 +1062,78 @@ export const RegularStaffPage = () => {
                                         </div>
                                     </div>
                                 )}
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'position' && (
+                        <div className="space-y-4 py-2">
+                            <div className="bg-slate-50 p-4 rounded-lg border">
+                                <h4 className="font-medium text-slate-700 mb-3">새 이력 추가</h4>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <Input
+                                        type="date"
+                                        placeholder="적용일"
+                                        value={newPositionDate}
+                                        onChange={e => setNewPositionDate(e.target.value)}
+                                        className="bg-white"
+                                    />
+                                    <Input
+                                        placeholder="부서"
+                                        value={newPositionDept}
+                                        onChange={e => setNewPositionDept(e.target.value)}
+                                        className="bg-white"
+                                    />
+                                    <Input
+                                        placeholder="직급"
+                                        value={newPositionTitle}
+                                        onChange={e => setNewPositionTitle(e.target.value)}
+                                        className="bg-white"
+                                    />
+                                    <Input
+                                        placeholder="변동 사유 (선택)"
+                                        value={newPositionReason}
+                                        onChange={e => setNewPositionReason(e.target.value)}
+                                        className="bg-white"
+                                    />
+                                </div>
+                                <Button onClick={handleAddPosition} className="bg-indigo-600 hover:bg-indigo-700 mt-3 w-full">추가</Button>
+                            </div>
+
+                            <div className="border rounded-xl overflow-hidden">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-slate-50 border-b">
+                                        <tr>
+                                            <th className="p-3 text-left font-medium text-slate-500">적용일</th>
+                                            <th className="p-3 text-left font-medium text-slate-500">부서</th>
+                                            <th className="p-3 text-left font-medium text-slate-500">직급</th>
+                                            <th className="p-3 text-left font-medium text-slate-500">사유</th>
+                                            <th className="p-3 text-right font-medium text-slate-500">관리</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y">
+                                        {details?.position_history?.map((item: any) => (
+                                            <tr key={item.id} className="hover:bg-slate-50">
+                                                <td className="p-3 font-mono text-slate-700">{item.effective_date}</td>
+                                                <td className="p-3 text-slate-700">{item.department || '-'}</td>
+                                                <td className="p-3 text-slate-700">{item.position || '-'}</td>
+                                                <td className="p-3 text-slate-600 max-w-[150px] truncate" title={item.reason}>{item.reason || '-'}</td>
+                                                <td className="p-3 text-right">
+                                                    <Button size="sm" variant="ghost" className="h-7 text-rose-500 hover:text-rose-700 hover:bg-rose-50" onClick={() => handleDeletePosition(item.id)}>
+                                                        삭제
+                                                    </Button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {(!details?.position_history || details.position_history.length === 0) && (
+                                            <tr>
+                                                <td colSpan={5} className="p-8 text-center text-slate-400">
+                                                    이력이 없습니다.
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     )}

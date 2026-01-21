@@ -49,11 +49,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         for (const item of items) {
             let empId = empMap.get(item.name);
 
-            // Auto-create employee if not exists
             if (!empId) {
+                // NEW EMPLOYEE: Create employee record
                 empId = crypto.randomUUID();
 
-                // Create employee record with extended details
                 stmts.push(db.prepare(
                     `INSERT INTO regular_employees (id, name, company_id, department, position, employee_code, source, created_at, last_synced_at) 
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -70,14 +69,75 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
                 ));
 
                 newEmployees.push(item.name);
-                empMap.set(item.name, empId); // Update map to avoid double creation in same batch
+                empMap.set(item.name, empId);
+
+                // Add initial position history for new employee
+                if (item.department || item.position) {
+                    stmts.push(db.prepare(
+                        `INSERT INTO employee_position_history (id, employee_id, department, position, effective_date, reason, created_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?)`
+                    ).bind(
+                        crypto.randomUUID(),
+                        empId,
+                        item.department || null,
+                        item.position || null,
+                        effectiveDate,
+                        'Initial Position (Wage Upload)',
+                        Date.now()
+                    ));
+                }
+            } else {
+                // EXISTING EMPLOYEE: Check if department/position changed
+                const currentEmp = employees.results?.find((e: any) => e.id === empId);
+                const deptChanged = item.department && item.department !== currentEmp?.department;
+                const posChanged = item.position && item.position !== currentEmp?.position;
+
+                if (deptChanged || posChanged) {
+                    // Add position history entry
+                    stmts.push(db.prepare(
+                        `INSERT INTO employee_position_history (id, employee_id, department, position, effective_date, reason, created_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?)`
+                    ).bind(
+                        crypto.randomUUID(),
+                        empId,
+                        item.department || currentEmp?.department || null,
+                        item.position || currentEmp?.position || null,
+                        effectiveDate,
+                        'Wage Upload Update',
+                        Date.now()
+                    ));
+                }
+
+                // Update employee record
+                const updates: string[] = [];
+                const values: any[] = [];
+
+                if (item.department) {
+                    updates.push("department = ?");
+                    values.push(item.department);
+                }
+                if (item.position) {
+                    updates.push("position = ?");
+                    values.push(item.position);
+                }
+                if (item.employeeCode) {
+                    updates.push("employee_code = ?");
+                    values.push(item.employeeCode);
+                }
+
+                // Always update last_synced_at
+                updates.push("last_synced_at = ?");
+                values.push(Date.now());
+
+                if (updates.length > 0) {
+                    values.push(empId);
+                    stmts.push(db.prepare(
+                        `UPDATE regular_employees SET ${updates.join(", ")} WHERE id = ?`
+                    ).bind(...values));
+                }
             }
 
-            // [New] Implicit Status History: Wage = Active
-            // We adding a status history record marking them as 'ACTIVE' from this effective date.
-            // Check if we should deduplicate? For now, we'll use INSERT OR IGNORE if we had a unique constraint, 
-            // but we don't on (employee_id, effective_date). 
-            // Let's just insert. It verifies they were active as of this date.
+            // Always add status history entry (both new and existing employees)
             stmts.push(db.prepare(
                 `INSERT INTO employee_status_history (id, employee_id, status, effective_date, reason, created_at)
                  VALUES (?, ?, ?, ?, ?, ?)`
@@ -86,7 +146,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
                 empId,
                 'ACTIVE',
                 effectiveDate,
-                'Hourly Wage Upload (Implicit)',
+                'Hourly Wage Upload',
                 Date.now()
             ));
 

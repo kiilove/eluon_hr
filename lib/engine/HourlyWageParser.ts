@@ -39,8 +39,17 @@ export class HourlyWageParser {
 
                 // Try to find optional columns in the same row
                 deptColIdx = row.findIndex(c => typeof c === 'string' && (c.includes('부서')));
-                posColIdx = row.findIndex(c => typeof c === 'string' && (c.includes('직위') || c.includes('직책')));
+                posColIdx = row.findIndex(c => typeof c === 'string' && (c.includes('직위') || c.includes('직책') || c.includes('직급')));
                 codeColIdx = row.findIndex(c => typeof c === 'string' && (c.includes('사번') || c.includes('주민')));
+
+                console.log('[HourlyWageParser] Header Row:', row);
+                console.log('[HourlyWageParser] Detected Columns:', {
+                    name: nameColIdx,
+                    amount: amountColIdx,
+                    department: deptColIdx,
+                    position: posColIdx,
+                    code: codeColIdx
+                });
                 break;
             }
         }
@@ -68,6 +77,9 @@ export class HourlyWageParser {
                 items.push(item);
             }
         }
+
+        console.log('[HourlyWageParser] Parsed Items (first 3):', items.slice(0, 3));
+        console.log('[HourlyWageParser] Total Items:', items.length);
 
         return items;
     }

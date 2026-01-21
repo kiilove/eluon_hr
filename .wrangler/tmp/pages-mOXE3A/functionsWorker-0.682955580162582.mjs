@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-// ../.wrangler/tmp/bundle-qQRDoX/checked-fetch.js
+// ../.wrangler/tmp/bundle-8z73Yv/checked-fetch.js
 var urls = /* @__PURE__ */ new Set();
 function checkURL(request, init) {
   const url = request instanceof URL ? request : new URL(
@@ -857,13 +857,19 @@ var onRequestGet5 = /* @__PURE__ */ __name(async (context) => {
             WHERE employee_id = ?
             ORDER BY effective_date DESC, created_at DESC
         `).bind(id).all();
+    const { results: positionHistory } = await context.env.DB.prepare(`
+            SELECT * FROM employee_position_history
+            WHERE employee_id = ?
+            ORDER BY effective_date DESC, created_at DESC
+        `).bind(id).all();
     return new Response(JSON.stringify({
       success: true,
       data: {
         employee,
         memos: memos || [],
         wages: wages || [],
-        status_history: statusHistory || []
+        status_history: statusHistory || [],
+        position_history: positionHistory || []
       }
     }), { headers: { "Content-Type": "application/json" } });
   } catch (e) {
@@ -897,8 +903,69 @@ var onRequestDelete3 = /* @__PURE__ */ __name(async (context) => {
   }
 }, "onRequestDelete");
 
-// api/employees/status.ts
+// api/employees/position-history.ts
 var onRequestGet6 = /* @__PURE__ */ __name(async (context) => {
+  try {
+    const url = new URL(context.request.url);
+    const employeeId = url.searchParams.get("employeeId");
+    if (!employeeId) {
+      return new Response(JSON.stringify({ error: "employeeId is required" }), { status: 400 });
+    }
+    const { results } = await context.env.DB.prepare(
+      `SELECT * FROM employee_position_history 
+             WHERE employee_id = ? 
+             ORDER BY effective_date DESC, created_at DESC`
+    ).bind(employeeId).all();
+    return new Response(JSON.stringify(results), {
+      headers: { "Content-Type": "application/json" }
+    });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+  }
+}, "onRequestGet");
+var onRequestPost6 = /* @__PURE__ */ __name(async (context) => {
+  try {
+    const { employeeId, department, position, effectiveDate, reason } = await context.request.json();
+    if (!employeeId || !effectiveDate) {
+      return new Response(JSON.stringify({ error: "employeeId and effectiveDate are required" }), { status: 400 });
+    }
+    const id = crypto.randomUUID();
+    await context.env.DB.prepare(
+      `INSERT INTO employee_position_history (id, employee_id, department, position, effective_date, reason, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).bind(id, employeeId, department || null, position || null, effectiveDate, reason || null, Date.now()).run();
+    await context.env.DB.prepare(
+      `UPDATE regular_employees 
+             SET department = ?, position = ?, last_synced_at = ?
+             WHERE id = ?`
+    ).bind(department || null, position || null, Date.now(), employeeId).run();
+    return new Response(JSON.stringify({ success: true, id }), {
+      headers: { "Content-Type": "application/json" }
+    });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+  }
+}, "onRequestPost");
+var onRequestDelete4 = /* @__PURE__ */ __name(async (context) => {
+  try {
+    const url = new URL(context.request.url);
+    const id = url.searchParams.get("id");
+    if (!id) {
+      return new Response(JSON.stringify({ error: "id is required" }), { status: 400 });
+    }
+    await context.env.DB.prepare(
+      `DELETE FROM employee_position_history WHERE id = ?`
+    ).bind(id).run();
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { "Content-Type": "application/json" }
+    });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+  }
+}, "onRequestDelete");
+
+// api/employees/status.ts
+var onRequestGet7 = /* @__PURE__ */ __name(async (context) => {
   try {
     const url = new URL(context.request.url);
     const employeeId = url.searchParams.get("employeeId");
@@ -930,7 +997,7 @@ var onRequestGet6 = /* @__PURE__ */ __name(async (context) => {
     return new Response(JSON.stringify({ error: e.message }), { status: 500 });
   }
 }, "onRequestGet");
-var onRequestPost6 = /* @__PURE__ */ __name(async (context) => {
+var onRequestPost7 = /* @__PURE__ */ __name(async (context) => {
   try {
     const body = await context.request.json();
     const { employeeId, status, effectiveDate, reason } = body;
@@ -948,7 +1015,7 @@ var onRequestPost6 = /* @__PURE__ */ __name(async (context) => {
     return new Response(JSON.stringify({ error: e.message }), { status: 500 });
   }
 }, "onRequestPost");
-var onRequestDelete4 = /* @__PURE__ */ __name(async (context) => {
+var onRequestDelete5 = /* @__PURE__ */ __name(async (context) => {
   try {
     const url = new URL(context.request.url);
     const id = url.searchParams.get("id");
@@ -17897,7 +17964,7 @@ var GoogleGenAI = class {
 };
 
 // api/gemini/analyze.ts
-var onRequestPost7 = /* @__PURE__ */ __name(async (context) => {
+var onRequestPost8 = /* @__PURE__ */ __name(async (context) => {
   try {
     const { request, env } = context;
     const body = await request.json();
@@ -17939,7 +18006,7 @@ var onRequestPost7 = /* @__PURE__ */ __name(async (context) => {
 }, "onRequestPost");
 
 // api/hourly-wages/details.ts
-var onRequestGet7 = /* @__PURE__ */ __name(async (context) => {
+var onRequestGet8 = /* @__PURE__ */ __name(async (context) => {
   try {
     const url = new URL(context.request.url);
     const id = url.searchParams.get("id");
@@ -17958,7 +18025,7 @@ var onRequestGet7 = /* @__PURE__ */ __name(async (context) => {
     return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500 });
   }
 }, "onRequestGet");
-var onRequestDelete5 = /* @__PURE__ */ __name(async (context) => {
+var onRequestDelete6 = /* @__PURE__ */ __name(async (context) => {
   try {
     const url = new URL(context.request.url);
     const id = url.searchParams.get("id");
@@ -17974,7 +18041,7 @@ var onRequestDelete5 = /* @__PURE__ */ __name(async (context) => {
 }, "onRequestDelete");
 
 // api/hourly-wages/sync.ts
-var onRequestPost8 = /* @__PURE__ */ __name(async (context) => {
+var onRequestPost9 = /* @__PURE__ */ __name(async (context) => {
   try {
     const db = context.env.DB;
     const { effectiveDate, items, companyId } = await context.request.json();
@@ -18022,6 +18089,60 @@ var onRequestPost8 = /* @__PURE__ */ __name(async (context) => {
         ));
         newEmployees.push(item.name);
         empMap.set(item.name, empId);
+        if (item.department || item.position) {
+          stmts.push(db.prepare(
+            `INSERT INTO employee_position_history (id, employee_id, department, position, effective_date, reason, created_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?)`
+          ).bind(
+            crypto.randomUUID(),
+            empId,
+            item.department || null,
+            item.position || null,
+            effectiveDate,
+            "Initial Position (Wage Upload)",
+            Date.now()
+          ));
+        }
+      } else {
+        const currentEmp = employees.results?.find((e) => e.id === empId);
+        const deptChanged = item.department && item.department !== currentEmp?.department;
+        const posChanged = item.position && item.position !== currentEmp?.position;
+        if (deptChanged || posChanged) {
+          stmts.push(db.prepare(
+            `INSERT INTO employee_position_history (id, employee_id, department, position, effective_date, reason, created_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?)`
+          ).bind(
+            crypto.randomUUID(),
+            empId,
+            item.department || currentEmp?.department || null,
+            item.position || currentEmp?.position || null,
+            effectiveDate,
+            "Wage Upload Update",
+            Date.now()
+          ));
+        }
+        const updates = [];
+        const values = [];
+        if (item.department) {
+          updates.push("department = ?");
+          values.push(item.department);
+        }
+        if (item.position) {
+          updates.push("position = ?");
+          values.push(item.position);
+        }
+        if (item.employeeCode) {
+          updates.push("employee_code = ?");
+          values.push(item.employeeCode);
+        }
+        updates.push("last_synced_at = ?");
+        values.push(Date.now());
+        if (updates.length > 0) {
+          values.push(empId);
+          stmts.push(db.prepare(
+            `UPDATE regular_employees SET ${updates.join(", ")} WHERE id = ?`
+          ).bind(...values));
+        }
       }
       stmts.push(db.prepare(
         `INSERT INTO employee_status_history (id, employee_id, status, effective_date, reason, created_at)
@@ -18031,7 +18152,7 @@ var onRequestPost8 = /* @__PURE__ */ __name(async (context) => {
         empId,
         "ACTIVE",
         effectiveDate,
-        "Hourly Wage Upload (Implicit)",
+        "Hourly Wage Upload",
         Date.now()
       ));
       wageItems.push({
@@ -18072,7 +18193,7 @@ var onRequestPatch = /* @__PURE__ */ __name(async (context) => {
 }, "onRequestPatch");
 
 // api/management/lock-status.ts
-var onRequestGet8 = /* @__PURE__ */ __name(async (context) => {
+var onRequestGet9 = /* @__PURE__ */ __name(async (context) => {
   try {
     const { request, env } = context;
     const url = new URL(request.url);
@@ -18093,7 +18214,7 @@ var onRequestGet8 = /* @__PURE__ */ __name(async (context) => {
     return new Response(JSON.stringify({ success: false, message: e.message }), { status: 500 });
   }
 }, "onRequestGet");
-var onRequestPost9 = /* @__PURE__ */ __name(async (context) => {
+var onRequestPost10 = /* @__PURE__ */ __name(async (context) => {
   try {
     const { request, env } = context;
     const body = await request.json();
@@ -18119,7 +18240,7 @@ var onRequestPost9 = /* @__PURE__ */ __name(async (context) => {
 }, "onRequestPost");
 
 // api/management/update-codes.ts
-var onRequestPost10 = /* @__PURE__ */ __name(async (context) => {
+var onRequestPost11 = /* @__PURE__ */ __name(async (context) => {
   try {
     const { request, env } = context;
     const body = await request.json();
@@ -18161,7 +18282,7 @@ var onRequestPost10 = /* @__PURE__ */ __name(async (context) => {
 }, "onRequestPost");
 
 // api/processing/save.ts
-var onRequestPost11 = /* @__PURE__ */ __name(async (context) => {
+var onRequestPost12 = /* @__PURE__ */ __name(async (context) => {
   try {
     const { request, env } = context;
     const body = await request.json();
@@ -18292,7 +18413,7 @@ var onRequestPost11 = /* @__PURE__ */ __name(async (context) => {
 }, "onRequestPost");
 
 // api/reports/logs.ts
-var onRequestGet9 = /* @__PURE__ */ __name(async (context) => {
+var onRequestGet10 = /* @__PURE__ */ __name(async (context) => {
   try {
     const { request, env } = context;
     const url = new URL(request.url);
@@ -18331,7 +18452,7 @@ var onRequestGet9 = /* @__PURE__ */ __name(async (context) => {
 }, "onRequestGet");
 
 // api/settings/special-work.ts
-var onRequestGet10 = /* @__PURE__ */ __name(async (context) => {
+var onRequestGet11 = /* @__PURE__ */ __name(async (context) => {
   try {
     const url = new URL(context.request.url);
     const companyId = url.searchParams.get("companyId");
@@ -18371,7 +18492,7 @@ var onRequestGet10 = /* @__PURE__ */ __name(async (context) => {
     return new Response(JSON.stringify({ error: e.message }), { status: 500 });
   }
 }, "onRequestGet");
-var onRequestPost12 = /* @__PURE__ */ __name(async (context) => {
+var onRequestPost13 = /* @__PURE__ */ __name(async (context) => {
   try {
     const body = await context.request.json();
     const { companyId, effectiveDate, items } = body;
@@ -18404,7 +18525,7 @@ var onRequestPost12 = /* @__PURE__ */ __name(async (context) => {
     return new Response(JSON.stringify({ error: e.message }), { status: 500 });
   }
 }, "onRequestPost");
-var onRequestDelete6 = /* @__PURE__ */ __name(async (context) => {
+var onRequestDelete7 = /* @__PURE__ */ __name(async (context) => {
   try {
     const url = new URL(context.request.url);
     const id = url.searchParams.get("id");
@@ -18419,7 +18540,7 @@ var onRequestDelete6 = /* @__PURE__ */ __name(async (context) => {
 }, "onRequestDelete");
 
 // api/settings/wage-policies.ts
-var onRequestGet11 = /* @__PURE__ */ __name(async (context) => {
+var onRequestGet12 = /* @__PURE__ */ __name(async (context) => {
   try {
     const db = context.env.DB;
     const url = new URL(context.request.url);
@@ -18436,7 +18557,7 @@ var onRequestGet11 = /* @__PURE__ */ __name(async (context) => {
     return new Response(JSON.stringify({ error: e.message }), { status: 500 });
   }
 }, "onRequestGet");
-var onRequestPost13 = /* @__PURE__ */ __name(async (context) => {
+var onRequestPost14 = /* @__PURE__ */ __name(async (context) => {
   try {
     const body = await context.request.json();
     const { id, name, effective_date, base_multiplier, special_work_multiplier, night_work_multiplier, companyId } = body;
@@ -18463,7 +18584,7 @@ var onRequestPost13 = /* @__PURE__ */ __name(async (context) => {
     return new Response(JSON.stringify({ error: e.message }), { status: 500 });
   }
 }, "onRequestPost");
-var onRequestDelete7 = /* @__PURE__ */ __name(async (context) => {
+var onRequestDelete8 = /* @__PURE__ */ __name(async (context) => {
   try {
     const url = new URL(context.request.url);
     const id = url.searchParams.get("id");
@@ -18477,7 +18598,7 @@ var onRequestDelete7 = /* @__PURE__ */ __name(async (context) => {
 }, "onRequestDelete");
 
 // api/special-work/export-logs.ts
-var onRequestGet12 = /* @__PURE__ */ __name(async (context) => {
+var onRequestGet13 = /* @__PURE__ */ __name(async (context) => {
   try {
     const db = context.env.DB;
     const url = new URL(context.request.url);
@@ -18924,7 +19045,7 @@ var SpecialWorkCalculator = {
 };
 
 // api/special-work/generate-attendance.ts
-var onRequestPost14 = /* @__PURE__ */ __name(async (context) => {
+var onRequestPost15 = /* @__PURE__ */ __name(async (context) => {
   try {
     const db = context.env.DB;
     const body = await context.request.json();
@@ -19097,7 +19218,7 @@ var onRequestPost14 = /* @__PURE__ */ __name(async (context) => {
 }, "onRequestPost");
 
 // api/special-work/reports.ts
-var onRequestGet13 = /* @__PURE__ */ __name(async (context) => {
+var onRequestGet14 = /* @__PURE__ */ __name(async (context) => {
   try {
     const db = context.env.DB;
     const url = new URL(context.request.url);
@@ -19175,7 +19296,7 @@ var onRequestGet13 = /* @__PURE__ */ __name(async (context) => {
     return new Response(JSON.stringify({ success: false, message: e.message }), { status: 500 });
   }
 }, "onRequestGet");
-var onRequestDelete8 = /* @__PURE__ */ __name(async (context) => {
+var onRequestDelete9 = /* @__PURE__ */ __name(async (context) => {
   try {
     const db = context.env.DB;
     const url = new URL(context.request.url);
@@ -19198,7 +19319,7 @@ var onRequestDelete8 = /* @__PURE__ */ __name(async (context) => {
 }, "onRequestDelete");
 
 // api/special-work/sync.ts
-var onRequestPost15 = /* @__PURE__ */ __name(async (context) => {
+var onRequestPost16 = /* @__PURE__ */ __name(async (context) => {
   try {
     const db = context.env.DB;
     const body = await context.request.json();
@@ -19454,7 +19575,7 @@ __name(generateMonthlyAttendance, "generateMonthlyAttendance");
 
 // api/strategic/attendance.ts
 var pad2 = /* @__PURE__ */ __name((n) => n.toString().padStart(2, "0"), "pad");
-var onRequestPost16 = /* @__PURE__ */ __name(async (context) => {
+var onRequestPost17 = /* @__PURE__ */ __name(async (context) => {
   try {
     const payload = await context.request.json();
     const { staffId, year, month } = payload;
@@ -19486,7 +19607,7 @@ var onRequestPost16 = /* @__PURE__ */ __name(async (context) => {
     return new Response(JSON.stringify({ error: e.message }), { status: 500 });
   }
 }, "onRequestPost");
-var onRequestGet14 = /* @__PURE__ */ __name(async (context) => {
+var onRequestGet15 = /* @__PURE__ */ __name(async (context) => {
   try {
     const url = new URL(context.request.url);
     const staffId = url.searchParams.get("staffId");
@@ -19507,7 +19628,7 @@ var onRequestGet14 = /* @__PURE__ */ __name(async (context) => {
 }, "onRequestGet");
 
 // api/strategic/generate.ts
-var onRequestPost17 = /* @__PURE__ */ __name(async (context) => {
+var onRequestPost18 = /* @__PURE__ */ __name(async (context) => {
   try {
     const { count = 1, persona = "Specialist" } = await context.request.json();
     const generated = [];
@@ -19634,7 +19755,7 @@ function generateLeavePlan(staffId, year, scenario = "month_end") {
 __name(generateLeavePlan, "generateLeavePlan");
 
 // api/strategic/leaves.ts
-var onRequestPost18 = /* @__PURE__ */ __name(async (context) => {
+var onRequestPost19 = /* @__PURE__ */ __name(async (context) => {
   try {
     const payload = await context.request.json();
     const { action, staffId, year = (/* @__PURE__ */ new Date()).getFullYear(), date, reason } = payload;
@@ -19665,7 +19786,7 @@ var onRequestPost18 = /* @__PURE__ */ __name(async (context) => {
     return new Response(JSON.stringify({ error: e.message }), { status: 500 });
   }
 }, "onRequestPost");
-var onRequestGet15 = /* @__PURE__ */ __name(async (context) => {
+var onRequestGet16 = /* @__PURE__ */ __name(async (context) => {
   try {
     const url = new URL(context.request.url);
     const staffId = url.searchParams.get("staffId");
@@ -19680,7 +19801,7 @@ var onRequestGet15 = /* @__PURE__ */ __name(async (context) => {
     return new Response(JSON.stringify({ error: e.message }), { status: 500 });
   }
 }, "onRequestGet");
-var onRequestDelete9 = /* @__PURE__ */ __name(async (context) => {
+var onRequestDelete10 = /* @__PURE__ */ __name(async (context) => {
   try {
     const url = new URL(context.request.url);
     const id = url.searchParams.get("id");
@@ -19714,7 +19835,7 @@ var onRequestPut = /* @__PURE__ */ __name(async (context) => {
     return new Response(JSON.stringify({ error: e.message }), { status: 500 });
   }
 }, "onRequestPut");
-var onRequestDelete10 = /* @__PURE__ */ __name(async (context) => {
+var onRequestDelete11 = /* @__PURE__ */ __name(async (context) => {
   try {
     const id = context.params.id;
     if (!id) return new Response("ID required", { status: 400 });
@@ -19763,7 +19884,7 @@ var GeminiEngine = class {
 };
 
 // api/audit.ts
-var onRequestPost19 = /* @__PURE__ */ __name(async (context) => {
+var onRequestPost20 = /* @__PURE__ */ __name(async (context) => {
   const request = context.request;
   const env = context.env;
   try {
@@ -19860,7 +19981,7 @@ ${contextInfo}
 }, "onRequestPost");
 
 // api/employees.ts
-var onRequestGet16 = /* @__PURE__ */ __name(async (context) => {
+var onRequestGet17 = /* @__PURE__ */ __name(async (context) => {
   try {
     const url = new URL(context.request.url);
     const companyId = url.searchParams.get("companyId");
@@ -19879,7 +20000,7 @@ var onRequestGet16 = /* @__PURE__ */ __name(async (context) => {
     return new Response(JSON.stringify({ error: e.message }), { status: 500 });
   }
 }, "onRequestGet");
-var onRequestPost20 = /* @__PURE__ */ __name(async (context) => {
+var onRequestPost21 = /* @__PURE__ */ __name(async (context) => {
   try {
     const payload = await context.request.json();
     const items = Array.isArray(payload) ? payload : [payload];
@@ -19894,7 +20015,8 @@ var onRequestPost20 = /* @__PURE__ */ __name(async (context) => {
         email,
         phone,
         source,
-        companyId: explicitCompanyId
+        companyId: explicitCompanyId,
+        is_TF
       } = item;
       let companyId = explicitCompanyId;
       if (!companyId && email && email.includes("@")) {
@@ -19908,8 +20030,8 @@ var onRequestPost20 = /* @__PURE__ */ __name(async (context) => {
       const id = crypto.randomUUID();
       stmts.push(
         context.env.DB.prepare(
-          `INSERT OR IGNORE INTO regular_employees (id, company_id, employee_code, name, department, position, email, phone, source, last_synced_at) 
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT OR IGNORE INTO regular_employees (id, company_id, employee_code, name, department, position, email, phone, source, is_TF, last_synced_at) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).bind(
           id,
           companyId,
@@ -19920,6 +20042,7 @@ var onRequestPost20 = /* @__PURE__ */ __name(async (context) => {
           email || null,
           phone || null,
           source || "excel",
+          is_TF ? 1 : 0,
           Date.now()
         )
       );
@@ -19990,7 +20113,7 @@ var onRequestPatch2 = /* @__PURE__ */ __name(async (context) => {
     return new Response(JSON.stringify({ error: e.message }), { status: 500 });
   }
 }, "onRequestPatch");
-var onRequestDelete11 = /* @__PURE__ */ __name(async (context) => {
+var onRequestDelete12 = /* @__PURE__ */ __name(async (context) => {
   try {
     const url = new URL(context.request.url);
     const id = url.searchParams.get("id");
@@ -20019,7 +20142,7 @@ var onRequestDelete11 = /* @__PURE__ */ __name(async (context) => {
 }, "onRequestDelete");
 
 // api/hourly-wages/index.ts
-var onRequestGet17 = /* @__PURE__ */ __name(async (context) => {
+var onRequestGet18 = /* @__PURE__ */ __name(async (context) => {
   try {
     const url = new URL(context.request.url);
     const companyId = url.searchParams.get("companyId");
@@ -20038,7 +20161,7 @@ var onRequestGet17 = /* @__PURE__ */ __name(async (context) => {
 }, "onRequestGet");
 
 // api/policies.ts
-var onRequestGet18 = /* @__PURE__ */ __name(async (context) => {
+var onRequestGet19 = /* @__PURE__ */ __name(async (context) => {
   try {
     const url = new URL(context.request.url);
     const companyId = url.searchParams.get("companyId");
@@ -20053,7 +20176,7 @@ var onRequestGet18 = /* @__PURE__ */ __name(async (context) => {
     return new Response(JSON.stringify({ error: e.message }), { status: 500 });
   }
 }, "onRequestGet");
-var onRequestPost21 = /* @__PURE__ */ __name(async (context) => {
+var onRequestPost22 = /* @__PURE__ */ __name(async (context) => {
   try {
     const payload = await context.request.json();
     const {
@@ -20148,7 +20271,7 @@ var onRequestPatch3 = /* @__PURE__ */ __name(async (context) => {
     return new Response(JSON.stringify({ error: e.message }), { status: 500 });
   }
 }, "onRequestPatch");
-var onRequestDelete12 = /* @__PURE__ */ __name(async (context) => {
+var onRequestDelete13 = /* @__PURE__ */ __name(async (context) => {
   try {
     const url = new URL(context.request.url);
     const id = url.searchParams.get("id");
@@ -20163,7 +20286,7 @@ var onRequestDelete12 = /* @__PURE__ */ __name(async (context) => {
 }, "onRequestDelete");
 
 // api/strategic/index.ts
-var onRequestPost22 = /* @__PURE__ */ __name(async (context) => {
+var onRequestPost23 = /* @__PURE__ */ __name(async (context) => {
   try {
     const payload = await context.request.json();
     const { name, employee_code, target_persona, daily_work_hours, risk_level, companyId, scenario = "month_end" } = payload;
@@ -20199,7 +20322,7 @@ var onRequestPost22 = /* @__PURE__ */ __name(async (context) => {
     return new Response(JSON.stringify({ error: e.message }), { status: 500 });
   }
 }, "onRequestPost");
-var onRequestGet19 = /* @__PURE__ */ __name(async (context) => {
+var onRequestGet20 = /* @__PURE__ */ __name(async (context) => {
   try {
     const url = new URL(context.request.url);
     const companyId = url.searchParams.get("companyId");
@@ -20311,53 +20434,74 @@ var routes = [
     modules: [onRequestPost5]
   },
   {
-    routePath: "/api/employees/status",
+    routePath: "/api/employees/position-history",
     mountPath: "/api/employees",
     method: "DELETE",
     middlewares: [],
     modules: [onRequestDelete4]
   },
   {
-    routePath: "/api/employees/status",
+    routePath: "/api/employees/position-history",
     mountPath: "/api/employees",
     method: "GET",
     middlewares: [],
     modules: [onRequestGet6]
   },
   {
-    routePath: "/api/employees/status",
+    routePath: "/api/employees/position-history",
     mountPath: "/api/employees",
     method: "POST",
     middlewares: [],
     modules: [onRequestPost6]
   },
   {
+    routePath: "/api/employees/status",
+    mountPath: "/api/employees",
+    method: "DELETE",
+    middlewares: [],
+    modules: [onRequestDelete5]
+  },
+  {
+    routePath: "/api/employees/status",
+    mountPath: "/api/employees",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet7]
+  },
+  {
+    routePath: "/api/employees/status",
+    mountPath: "/api/employees",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost7]
+  },
+  {
     routePath: "/api/gemini/analyze",
     mountPath: "/api/gemini",
     method: "POST",
     middlewares: [],
-    modules: [onRequestPost7]
+    modules: [onRequestPost8]
   },
   {
     routePath: "/api/hourly-wages/details",
     mountPath: "/api/hourly-wages",
     method: "DELETE",
     middlewares: [],
-    modules: [onRequestDelete5]
+    modules: [onRequestDelete6]
   },
   {
     routePath: "/api/hourly-wages/details",
     mountPath: "/api/hourly-wages",
     method: "GET",
     middlewares: [],
-    modules: [onRequestGet7]
+    modules: [onRequestGet8]
   },
   {
     routePath: "/api/hourly-wages/sync",
     mountPath: "/api/hourly-wages",
     method: "POST",
     middlewares: [],
-    modules: [onRequestPost8]
+    modules: [onRequestPost9]
   },
   {
     routePath: "/api/hourly-wages/values",
@@ -20371,46 +20515,32 @@ var routes = [
     mountPath: "/api/management",
     method: "GET",
     middlewares: [],
-    modules: [onRequestGet8]
+    modules: [onRequestGet9]
   },
   {
     routePath: "/api/management/lock-status",
     mountPath: "/api/management",
     method: "POST",
     middlewares: [],
-    modules: [onRequestPost9]
+    modules: [onRequestPost10]
   },
   {
     routePath: "/api/management/update-codes",
     mountPath: "/api/management",
     method: "POST",
     middlewares: [],
-    modules: [onRequestPost10]
+    modules: [onRequestPost11]
   },
   {
     routePath: "/api/processing/save",
     mountPath: "/api/processing",
     method: "POST",
     middlewares: [],
-    modules: [onRequestPost11]
+    modules: [onRequestPost12]
   },
   {
     routePath: "/api/reports/logs",
     mountPath: "/api/reports",
-    method: "GET",
-    middlewares: [],
-    modules: [onRequestGet9]
-  },
-  {
-    routePath: "/api/settings/special-work",
-    mountPath: "/api/settings",
-    method: "DELETE",
-    middlewares: [],
-    modules: [onRequestDelete6]
-  },
-  {
-    routePath: "/api/settings/special-work",
-    mountPath: "/api/settings",
     method: "GET",
     middlewares: [],
     modules: [onRequestGet10]
@@ -20418,114 +20548,128 @@ var routes = [
   {
     routePath: "/api/settings/special-work",
     mountPath: "/api/settings",
-    method: "POST",
-    middlewares: [],
-    modules: [onRequestPost12]
-  },
-  {
-    routePath: "/api/settings/wage-policies",
-    mountPath: "/api/settings",
     method: "DELETE",
     middlewares: [],
     modules: [onRequestDelete7]
   },
   {
-    routePath: "/api/settings/wage-policies",
+    routePath: "/api/settings/special-work",
     mountPath: "/api/settings",
     method: "GET",
     middlewares: [],
     modules: [onRequestGet11]
   },
   {
-    routePath: "/api/settings/wage-policies",
+    routePath: "/api/settings/special-work",
     mountPath: "/api/settings",
     method: "POST",
     middlewares: [],
     modules: [onRequestPost13]
   },
   {
-    routePath: "/api/special-work/export-logs",
-    mountPath: "/api/special-work",
-    method: "GET",
-    middlewares: [],
-    modules: [onRequestGet12]
-  },
-  {
-    routePath: "/api/special-work/generate-attendance",
-    mountPath: "/api/special-work",
-    method: "POST",
-    middlewares: [],
-    modules: [onRequestPost14]
-  },
-  {
-    routePath: "/api/special-work/reports",
-    mountPath: "/api/special-work",
+    routePath: "/api/settings/wage-policies",
+    mountPath: "/api/settings",
     method: "DELETE",
     middlewares: [],
     modules: [onRequestDelete8]
   },
   {
-    routePath: "/api/special-work/reports",
+    routePath: "/api/settings/wage-policies",
+    mountPath: "/api/settings",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet12]
+  },
+  {
+    routePath: "/api/settings/wage-policies",
+    mountPath: "/api/settings",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost14]
+  },
+  {
+    routePath: "/api/special-work/export-logs",
     mountPath: "/api/special-work",
     method: "GET",
     middlewares: [],
     modules: [onRequestGet13]
   },
   {
-    routePath: "/api/special-work/sync",
+    routePath: "/api/special-work/generate-attendance",
     mountPath: "/api/special-work",
     method: "POST",
     middlewares: [],
     modules: [onRequestPost15]
   },
   {
-    routePath: "/api/strategic/attendance",
-    mountPath: "/api/strategic",
-    method: "GET",
-    middlewares: [],
-    modules: [onRequestGet14]
-  },
-  {
-    routePath: "/api/strategic/attendance",
-    mountPath: "/api/strategic",
-    method: "POST",
-    middlewares: [],
-    modules: [onRequestPost16]
-  },
-  {
-    routePath: "/api/strategic/generate",
-    mountPath: "/api/strategic",
-    method: "POST",
-    middlewares: [],
-    modules: [onRequestPost17]
-  },
-  {
-    routePath: "/api/strategic/leaves",
-    mountPath: "/api/strategic",
+    routePath: "/api/special-work/reports",
+    mountPath: "/api/special-work",
     method: "DELETE",
     middlewares: [],
     modules: [onRequestDelete9]
   },
   {
-    routePath: "/api/strategic/leaves",
+    routePath: "/api/special-work/reports",
+    mountPath: "/api/special-work",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet14]
+  },
+  {
+    routePath: "/api/special-work/sync",
+    mountPath: "/api/special-work",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost16]
+  },
+  {
+    routePath: "/api/strategic/attendance",
     mountPath: "/api/strategic",
     method: "GET",
     middlewares: [],
     modules: [onRequestGet15]
   },
   {
-    routePath: "/api/strategic/leaves",
+    routePath: "/api/strategic/attendance",
+    mountPath: "/api/strategic",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost17]
+  },
+  {
+    routePath: "/api/strategic/generate",
     mountPath: "/api/strategic",
     method: "POST",
     middlewares: [],
     modules: [onRequestPost18]
   },
   {
-    routePath: "/api/strategic/:id",
+    routePath: "/api/strategic/leaves",
     mountPath: "/api/strategic",
     method: "DELETE",
     middlewares: [],
     modules: [onRequestDelete10]
+  },
+  {
+    routePath: "/api/strategic/leaves",
+    mountPath: "/api/strategic",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet16]
+  },
+  {
+    routePath: "/api/strategic/leaves",
+    mountPath: "/api/strategic",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost19]
+  },
+  {
+    routePath: "/api/strategic/:id",
+    mountPath: "/api/strategic",
+    method: "DELETE",
+    middlewares: [],
+    modules: [onRequestDelete11]
   },
   {
     routePath: "/api/strategic/:id",
@@ -20539,21 +20683,21 @@ var routes = [
     mountPath: "/api",
     method: "POST",
     middlewares: [],
-    modules: [onRequestPost19]
+    modules: [onRequestPost20]
   },
   {
     routePath: "/api/employees",
     mountPath: "/api",
     method: "DELETE",
     middlewares: [],
-    modules: [onRequestDelete11]
+    modules: [onRequestDelete12]
   },
   {
     routePath: "/api/employees",
     mountPath: "/api",
     method: "GET",
     middlewares: [],
-    modules: [onRequestGet16]
+    modules: [onRequestGet17]
   },
   {
     routePath: "/api/employees",
@@ -20567,28 +20711,28 @@ var routes = [
     mountPath: "/api",
     method: "POST",
     middlewares: [],
-    modules: [onRequestPost20]
+    modules: [onRequestPost21]
   },
   {
     routePath: "/api/hourly-wages",
     mountPath: "/api/hourly-wages",
     method: "GET",
     middlewares: [],
-    modules: [onRequestGet17]
+    modules: [onRequestGet18]
   },
   {
     routePath: "/api/policies",
     mountPath: "/api",
     method: "DELETE",
     middlewares: [],
-    modules: [onRequestDelete12]
+    modules: [onRequestDelete13]
   },
   {
     routePath: "/api/policies",
     mountPath: "/api",
     method: "GET",
     middlewares: [],
-    modules: [onRequestGet18]
+    modules: [onRequestGet19]
   },
   {
     routePath: "/api/policies",
@@ -20602,21 +20746,21 @@ var routes = [
     mountPath: "/api",
     method: "POST",
     middlewares: [],
-    modules: [onRequestPost21]
+    modules: [onRequestPost22]
   },
   {
     routePath: "/api/strategic",
     mountPath: "/api/strategic",
     method: "GET",
     middlewares: [],
-    modules: [onRequestGet19]
+    modules: [onRequestGet20]
   },
   {
     routePath: "/api/strategic",
     mountPath: "/api/strategic",
     method: "POST",
     middlewares: [],
-    modules: [onRequestPost22]
+    modules: [onRequestPost23]
   }
 ];
 
@@ -21107,7 +21251,7 @@ var jsonError = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx)
 }, "jsonError");
 var middleware_miniflare3_json_error_default = jsonError;
 
-// ../.wrangler/tmp/bundle-qQRDoX/middleware-insertion-facade.js
+// ../.wrangler/tmp/bundle-8z73Yv/middleware-insertion-facade.js
 var __INTERNAL_WRANGLER_MIDDLEWARE__ = [
   middleware_ensure_req_body_drained_default,
   middleware_miniflare3_json_error_default
@@ -21139,7 +21283,7 @@ function __facade_invoke__(request, env, ctx, dispatch, finalMiddleware) {
 }
 __name(__facade_invoke__, "__facade_invoke__");
 
-// ../.wrangler/tmp/bundle-qQRDoX/middleware-loader.entry.ts
+// ../.wrangler/tmp/bundle-8z73Yv/middleware-loader.entry.ts
 var __Facade_ScheduledController__ = class ___Facade_ScheduledController__ {
   constructor(scheduledTime, cron, noRetry) {
     this.scheduledTime = scheduledTime;

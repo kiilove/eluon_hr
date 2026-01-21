@@ -14,6 +14,7 @@ import { PolicyUtils } from '../lib/policyUtils';
 // Components
 import { ProcessingHeader } from '../components/processing/ProcessingHeader';
 import { Step1Upload } from '../components/processing/Step1Upload';
+import { AlertTriangle } from 'lucide-react';
 import { Step2Verification } from '../components/processing/Step2Verification';
 import { Step3Correction } from '../components/processing/Step3Correction';
 import { Step4Preview } from '../components/processing/Step4Preview';
@@ -47,20 +48,38 @@ export const AttendanceManagementPage = () => {
     const [tfUserNames, setTfUserNames] = useState<Set<string>>(new Set());
     const [tfUserIds, setTfUserIds] = useState<Set<string>>(new Set());
 
+    const [hasCheckedMissing, setHasCheckedMissing] = useState(false);
+    const [employeeCount, setEmployeeCount] = useState<number | null>(null);
+
     const refreshEmployees = async () => {
         try {
-            // [Fix] Pass Company ID
             const userStr = localStorage.getItem('user');
             const userObj = userStr ? JSON.parse(userStr) : null;
             const companyId = userObj?.company_id;
 
-            const res = await fetch(`/api/employees?t=${Date.now()}&companyId=${companyId || ''}`, { cache: 'no-store' });
-            const data: any[] = await res.json();
-            const tfNames = new Set(data.filter(e => e.is_TF).map(e => e.name));
-            const tfIds = new Set(data.filter(e => e.is_TF).map(e => e.id));
-            setTfUserNames(tfNames);
-            setTfUserIds(tfIds);
-            console.log(`[AttendancePage] Loaded ${tfIds.size} TF Users.`);
+            if (!companyId) {
+                console.warn("[AttendancePage] No company ID found.");
+                return;
+            }
+
+            const res = await fetch(`/api/employees?t=${Date.now()}&companyId=${companyId}`, { cache: 'no-store' });
+            if (!res.ok) {
+                console.error("[AttendancePage] Failed to fetch employees:", res.status, res.statusText);
+                return;
+            }
+
+            const data = await res.json();
+            if (Array.isArray(data)) {
+                const tfNames = new Set(data.filter((e: any) => e.is_TF).map((e: any) => e.name));
+                const tfIds = new Set(data.filter((e: any) => e.is_TF).map((e: any) => e.id));
+                setTfUserNames(tfNames);
+                setTfUserIds(tfIds);
+                setEmployeeCount(data.length);
+                console.log(`[AttendancePage] Loaded ${tfIds.size} TF Users. Total Employees: ${data.length}`);
+            } else {
+                console.warn("[AttendancePage] Expected array but got:", data);
+                setEmployeeCount(0); // Fallback to 0 if response is weird but successful? Or keep null? Safe to assume 0 if malformed? Maybe not.
+            }
         } catch (err) {
             console.warn("Failed to fetch employees", err);
         }
@@ -139,32 +158,58 @@ export const AttendanceManagementPage = () => {
     }, [location.state, data, config]);
 
     // [New] Fail-safe: Auto-generate V4 if missing in Step 4 (e.g. navigated via Header)
+    // [CRITICAL] 직원 명부 우선: 재직 직원은 0시간이어도 포함
     useEffect(() => {
         if (step === 4 && data && !data.v4) {
             console.log("Fail-safe: Step 4 reached but V4 missing. Generating now...");
             const sourceLogs = data.v3 || data.v2;
 
-            // 1. Identify "Active Users"
-            const activeUserIds = new Set<string>();
-            sourceLogs.forEach(log => {
-                const hasWork = (log.actualWorkDuration || 0) > 0;
-                const isOther = log.logStatus === LogStatus.OTHER;
-                const isTF = (log.employeeId && tfUserIds.has(log.employeeId)) || (!log.employeeId && tfUserNames.has(log.userId));
+            const generateV4 = async () => {
+                // 1. Fetch Active Employees from Roster (직원 명부 확인)
+                let activeEmployeeIds = new Set<string>();
+                try {
+                    const userStr = localStorage.getItem('user');
+                    const companyId = userStr ? JSON.parse(userStr).company_id : null;
+                    if (companyId) {
+                        const empRes = await fetch(`/api/employees?t=${Date.now()}&companyId=${companyId}`, { cache: 'no-store' });
+                        const allEmployees = await empRes.json() as any[];
 
-                if (hasWork || isOther || isTF) {
-                    activeUserIds.add(log.userId);
+                        // Get IDs of ACTIVE employees (재직 직원)
+                        const activeEmps = allEmployees.filter((e: any) => e.current_status === 'ACTIVE');
+                        activeEmployeeIds = new Set(activeEmps.map((e: any) => e.id));
+
+                        console.log(`[Fail-safe V4] 재직 직원: ${activeEmployeeIds.size}명`);
+                    }
+                } catch (err) {
+                    console.error("[Fail-safe V4] Failed to fetch active employees:", err);
                 }
-            });
 
-            // 2. Create V4
-            const v4Logs = sourceLogs.filter(log => activeUserIds.has(log.userId));
+                // 2. Identify "Active Users"
+                const activeUserIds = new Set<string>();
+                sourceLogs.forEach(log => {
+                    const isActiveEmployee = log.employeeId && activeEmployeeIds.has(log.employeeId);
+                    const hasWork = (log.actualWorkDuration || 0) > 0;
+                    const isOther = log.logStatus === LogStatus.OTHER;
+                    const isTF = (log.employeeId && tfUserIds.has(log.employeeId)) || (!log.employeeId && tfUserNames.has(log.userId));
 
-            setData(prev => {
-                if (!prev) return null;
-                return { ...prev, v4: v4Logs };
-            });
+                    // [PRIORITY] 재직 직원은 무조건 포함
+                    if (isActiveEmployee || hasWork || isOther || isTF) {
+                        activeUserIds.add(log.userId);
+                    }
+                });
+
+                // 3. Create V4
+                const v4Logs = sourceLogs.filter(log => activeUserIds.has(log.userId));
+
+                setData(prev => {
+                    if (!prev) return null;
+                    return { ...prev, v4: v4Logs };
+                });
+            };
+
+            generateV4();
         }
-    }, [step, data]);
+    }, [step, data, tfUserIds, tfUserNames]);
 
 
     // Handlers
@@ -723,27 +768,52 @@ export const AttendanceManagementPage = () => {
 
 
     // [New] Transition to Step 4 (Create V4 State)
-    const handleMoveToStep4 = () => {
+    // [CRITICAL] 직원 명부 우선: 재직 직원은 0시간이어도 포함
+    const handleMoveToStep4 = async () => {
         if (!data) return;
         const sourceLogs = data.v3 || data.v2;
         console.log("MoveToStep4: Source Logs Count:", sourceLogs.length);
 
-        // 1. Identify "Active Users"
-        // Rule: User is Active if they have ANY log with (ActualWork > 0) OR (Status == OTHER) OR (Is TF)
+        // 1. Fetch Active Employees from Roster (직원 명부 확인)
+        let activeEmployeeIds = new Set<string>();
+        try {
+            const userStr = localStorage.getItem('user');
+            const companyId = userStr ? JSON.parse(userStr).company_id : null;
+            if (companyId) {
+                const empRes = await fetch(`/api/employees?t=${Date.now()}&companyId=${companyId}`, { cache: 'no-store' });
+                const allEmployees = await empRes.json() as any[];
+
+                // Get IDs of ACTIVE employees (재직 직원)
+                const activeEmps = allEmployees.filter((e: any) => e.current_status === 'ACTIVE');
+                activeEmployeeIds = new Set(activeEmps.map((e: any) => e.id));
+
+                console.log(`[V4 Filter] 재직 직원: ${activeEmployeeIds.size}명`);
+            }
+        } catch (err) {
+            console.error("[V4 Filter] Failed to fetch active employees:", err);
+        }
+
+        // 2. Identify "Active Users" for V4
+        // Rule: User is Active if:
+        //   - Employee is ACTIVE in roster (재직) OR
+        //   - Has ANY log with (ActualWork > 0) OR
+        //   - Has Status == OTHER OR
+        //   - Is TF
         const activeUserIds = new Set<string>();
         sourceLogs.forEach(log => {
+            const isActiveEmployee = log.employeeId && activeEmployeeIds.has(log.employeeId);
             const hasWork = (log.actualWorkDuration || 0) > 0;
             const isOther = log.logStatus === LogStatus.OTHER;
             const isTF = (log.employeeId && tfUserIds.has(log.employeeId)) || (!log.employeeId && tfUserNames.has(log.userId));
 
-            if (hasWork || isOther || isTF) {
+            // [PRIORITY] 재직 직원은 무조건 포함
+            if (isActiveEmployee || hasWork || isOther || isTF) {
                 activeUserIds.add(log.userId);
             }
         });
 
-        // 2. Create V4: Keep ALL logs for Active Users (including Holidays)
-        // This removes users who have ONLY 0-work/Holiday/Vacation logs (Total 0)
-        // But ensures Active Users see their Holidays correctly.
+        // 3. Create V4: Keep ALL logs for Active Users (including Holidays/Vacations)
+        // 재직 직원의 모든 로그 포함 (휴가, 0시간 포함)
         let v4Logs = sourceLogs.filter(log => activeUserIds.has(log.userId));
 
         console.log("MoveToStep4: Active Users:", activeUserIds.size);
@@ -1073,6 +1143,114 @@ export const AttendanceManagementPage = () => {
         }
     };
 
+    // [PRIORITY] Check for Missing Active Employees when entering Step 2
+    // 직원 명부를 우선시: 재직(ACTIVE) 상태 직원은 엑셀에 없어도 가상 데이터 생성
+    useEffect(() => {
+        if (step === 2 && data?.v2 && !hasCheckedMissing) {
+            const checkMissing = async () => {
+                try {
+                    setHasCheckedMissing(true); // Mark as checked immediately to prevent double run
+
+                    const userStr = localStorage.getItem('user');
+                    const companyId = userStr ? JSON.parse(userStr).company_id : null;
+                    if (!companyId) return;
+
+                    // 1. Get Active Employees from Roster (직원 명부 우선)
+                    const empRes = await fetch(`/api/employees?t=${Date.now()}&companyId=${companyId}`, { cache: 'no-store' });
+                    const allEmployees = await empRes.json() as any[];
+
+                    // Filter: ONLY employees with ACTIVE status (재직만 포함)
+                    // 직원 명부에서 재직이라고 표시되어있으면 우선시
+                    const activeEmployees = allEmployees.filter((e: any) => e.current_status === 'ACTIVE');
+
+                    console.log(`[직원명부 우선] 총 재직 직원: ${activeEmployees.length}명`);
+
+                    // 2. Identify Missing Employees (엑셀에 없는 재직 직원 찾기)
+                    const uploadedUserIds = new Set(data.v2.map(l => l.userId));
+                    const uploadedUserNames = new Set(data.v2.map(l => l.userName));
+
+                    const missing = activeEmployees.filter((e: any) => {
+                        return !uploadedUserIds.has(e.id) && !uploadedUserNames.has(e.name);
+                    });
+
+                    console.log(`[직원명부 우선] 엑셀에 누락된 재직 직원: ${missing.length}명`, missing.map(e => e.name));
+
+                    if (missing.length === 0) {
+                        console.log('[직원명부 우선] 모든 재직 직원이 엑셀에 포함되어 있습니다.');
+                        return;
+                    }
+
+                    // 3. Generate Virtual Logs for Missing Active Employees
+                    // 엑셀에 없어도 재직 직원이면 가상 데이터 생성
+                    const logs = data.v2;
+                    const dates = logs.map(l => l.date).sort();
+                    if (dates.length === 0) return;
+
+                    const startDate = new Date(dates[0]);
+                    const endDate = new Date(dates[dates.length - 1]);
+
+                    const newLogs: ProcessedWorkLog[] = [];
+                    let generatedCount = 0;
+
+                    // Iterate period (weekdays only)
+                    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+                        const day = d.getDay();
+                        const isWeekend = day === 0 || day === 6;
+                        if (isWeekend) continue;
+
+                        const dateStr = d.toISOString().split('T')[0];
+
+                        missing.forEach((emp: any) => {
+                            newLogs.push({
+                                id: `roster-priority-${emp.id}-${dateStr}`,
+                                userId: emp.id,
+                                userName: emp.name,
+                                employeeId: emp.id,
+                                department: emp.department,
+                                userTitle: emp.title,
+                                date: dateStr,
+                                startTime: 0,
+                                endTime: 0,
+                                rawStartTimeStr: '',
+                                rawEndTimeStr: '',
+                                totalDuration: 0,
+                                breakDuration: 0,
+                                actualWorkDuration: 0,
+                                overtimeDuration: 0,
+                                specialWorkMinutes: 0,
+                                nightWorkDuration: 0,
+                                restDuration: 0,
+                                workType: 'BASIC',
+                                isHoliday: false,
+                                status: 'NORMAL',
+                                logStatus: LogStatus.VACATION,
+                                note: '[직원명부 기준 자동생성 - 엑셀 미제출]'
+                            } as ProcessedWorkLog);
+                            generatedCount++;
+                        });
+                    }
+
+                    if (newLogs.length > 0) {
+                        setData(prev => {
+                            if (!prev) return null;
+                            const combined = [...prev.v2, ...newLogs].sort((a, b) => a.date.localeCompare(b.date) || a.userName.localeCompare(b.userName));
+                            return {
+                                ...prev,
+                                v2: combined,
+                                v1: [...prev.v1, ...newLogs]
+                            };
+                        });
+                        alert(`[직원 명부 우선 처리]\n엑셀에 없는 재직 직원 ${missing.length}명에 대해\n가상 데이터를 생성하고 평일 '휴가' 처리했습니다.\n(총 ${generatedCount}건 생성)\n\n직원명부: ${missing.map(e => e.name).join(', ')}`);
+                    }
+
+                } catch (e) {
+                    console.error("[직원명부 우선] Auto-Vacation check failed", e);
+                }
+            };
+            checkMissing();
+        }
+    }, [step, data, hasCheckedMissing]);
+
     const sidebarProps = {
         isReadOnly: step === 2,
         step,
@@ -1096,13 +1274,27 @@ export const AttendanceManagementPage = () => {
             <ProcessingHeader step={step} setStep={setStep} hasData={!!data} />
 
             {step === 1 && (
-                <Step1Upload
-                    setData={setData}
-                    setStep={setStep}
-                    config={config}
-                    policies={policies}
-                    tfUserNames={tfUserNames}
-                />
+                <div className="space-y-4">
+                    {employeeCount === 0 && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+                            <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+                            <div>
+                                <h3 className="font-medium text-amber-900">시급 데이터가 없습니다</h3>
+                                <p className="text-sm text-amber-700 mt-1">
+                                    등록된 직원이 없습니다. 정확한 급여 계산을 위해 <strong>[시급 관리]</strong> 메뉴에서 시급 데이터를 먼저 업로드해주세요.<br />
+                                    시급 데이터 업로드 시 직원이 자동으로 생성됩니다.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                    <Step1Upload
+                        setData={setData}
+                        setStep={setStep}
+                        config={config}
+                        policies={policies}
+                        tfUserNames={tfUserNames}
+                    />
+                </div>
             )}
 
             {step === 2 && data && (

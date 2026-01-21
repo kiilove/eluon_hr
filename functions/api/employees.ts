@@ -39,7 +39,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
         for (const item of items) {
             const {
-                employee_code, name, department, position, email, phone, source, companyId: explicitCompanyId
+                employee_code, name, department, position, email, phone, source, companyId: explicitCompanyId, is_TF
             } = item;
 
             // 1. Determine Company
@@ -62,10 +62,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             // D1 batch takes array of prepared statements.
             stmts.push(
                 context.env.DB.prepare(
-                    `INSERT OR IGNORE INTO regular_employees (id, company_id, employee_code, name, department, position, email, phone, source, last_synced_at) 
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                    `INSERT OR IGNORE INTO regular_employees (id, company_id, employee_code, name, department, position, email, phone, source, is_TF, last_synced_at) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
                 ).bind(
-                    id, companyId, employee_code || null, name, department, position, email || null, phone || null, source || 'excel', Date.now()
+                    id, companyId, employee_code || null, name, department, position, email || null, phone || null, source || 'excel', is_TF ? 1 : 0, Date.now()
                 )
             );
 
