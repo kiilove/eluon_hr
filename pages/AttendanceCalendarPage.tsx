@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import ReactMarkdown from 'react-markdown';
-import { ChevronLeft, ChevronRight, Loader2, AlertTriangle, CheckCircle, Clock, CalendarDays, TableProperties, Lock, RefreshCw, User, Briefcase, Search, FileDown, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, AlertTriangle, CheckCircle, Clock, CalendarDays, TableProperties, Lock, RefreshCw, User, Briefcase, Search, FileDown, Sparkles, FileSpreadsheet } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths, isSameMonth, isSameDay, parseISO, startOfWeek, endOfWeek } from 'date-fns';
 import { ko } from 'date-fns/locale';
@@ -707,7 +707,7 @@ const AttendanceCalendarPage = () => {
     return (
         <div className="h-[calc(100vh-100px)] flex flex-col space-y-4 max-w-[1800px] mx-auto">
             {/* Header */}
-            <div className="flex justify-between items-end shrink-0 mb-2">
+            <div className="flex justify-between items-center shrink-0 mb-2 bg-slate-50/70 dark:bg-slate-900/50 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-800/80 p-4 shadow-[0_4px_20px_-4px_rgba(148,163,184,0.15)] gap-4">
                 <div className="flex flex-col gap-1">
                     <h1 className="text-2xl font-bold tracking-tight text-slate-900">
                         근태 캘린더
@@ -719,7 +719,7 @@ const AttendanceCalendarPage = () => {
 
                 <div className="flex items-center gap-3">
                     {/* [View Mode] 3-State Toggle */}
-                    <div className="flex items-center bg-slate-100 rounded-lg p-1 border border-slate-200 mr-2">
+                    <div className="flex items-center bg-slate-100 rounded-lg p-1 border border-slate-200 mr-2 shadow-inner">
                         <button
                             onClick={() => setViewMode('MERGED')}
                             className={cn(
@@ -771,11 +771,15 @@ const AttendanceCalendarPage = () => {
 
 
 
-                    <Button variant="outline" size="sm" className="gap-2" onClick={() => ExcelReportGenerator.generateMonthlyReport(monthlyLogs, format(currentDate, 'yyyy-MM'), { name: '관리자', company_id: user?.company_id || 'Unknown' })}>
-                        <FileDown className="w-4 h-4" />
-                        월간 엑셀
+                    <Button 
+                        size="sm" 
+                        className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-[0_4px_12px_rgba(16,185,129,0.25)] hover:shadow-[0_6px_20px_rgba(16,185,129,0.4)] border border-emerald-500/20 hover:border-emerald-600/30 transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98]" 
+                        onClick={() => ExcelReportGenerator.generateMonthlyReport(monthlyLogs, format(currentDate, 'yyyy-MM'), { name: '관리자', company_id: user?.company_id || 'Unknown' })}
+                    >
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
+                        월간 엑셀 다운로드
                     </Button>
-                    <div className="flex items-center bg-slate-100 rounded-lg p-1 border border-slate-200 gap-1">
+                    <div className="flex items-center bg-slate-100 rounded-lg p-1 border border-slate-200 gap-1 shadow-inner">
                         <Button
                             variant="ghost"
                             size="icon"
@@ -825,8 +829,8 @@ const AttendanceCalendarPage = () => {
                         </Button>
                     </div>
 
-                    <Button variant="outline" size="sm" onClick={() => setCurrentDate(new Date())}>오늘</Button>
-                    <Button variant="outline" size="sm" onClick={fetchData} title="새로고침">
+                    <Button variant="outline" size="sm" className="shadow-sm hover:shadow-md" onClick={() => setCurrentDate(new Date())}>오늘</Button>
+                    <Button variant="outline" size="sm" className="shadow-sm hover:shadow-md" onClick={fetchData} title="새로고침">
                         <RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />
                     </Button>
                 </div>
