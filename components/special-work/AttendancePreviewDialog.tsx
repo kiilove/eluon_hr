@@ -35,10 +35,11 @@ export const AttendancePreviewDialog = ({ open, onOpenChange, logs, targets, onS
             const empId = groupLogs[0].employeeId;
             groupLogs.forEach((l: any) => {
                 const { actual } = getDuration(l.startTime, l.endTime, l.breakMinutes);
-                const recognizedMin = Math.round(actual / 60) * 60; // Round to nearest hour
+                // Recognized work is ROUNDED (User Requirement)
+                const recognizedMin = Math.round(actual / 60) * 60;
                 totalRecognizedMin += recognizedMin;
             });
-            const generatedHours = Math.floor(totalRecognizedMin / 60);
+            const generatedHours = Math.round(totalRecognizedMin / 60);
             const targetHours = targets[empId] || 0;
             const errorDiff = Math.abs(generatedHours - targetHours);
             const hasError = errorDiff > 0.1; // Allow float variance
@@ -118,9 +119,9 @@ export const AttendancePreviewDialog = ({ open, onOpenChange, logs, targets, onS
                                         )}
                                     </div>
                                     <div className="text-sm space-x-4 flex items-center">
-                                        <span className="text-slate-500">목표: <strong className="text-slate-800">{targetHours}시간</strong></span>
+                                        <span className="text-slate-500">목표(버림): <strong className="text-slate-800">{targetHours}시간</strong></span>
                                         <ArrowRight size={14} className="text-slate-300" />
-                                        <span className="text-slate-500">생성: <strong className={`${isMatch ? 'text-green-600' : 'text-red-600'}`}>{generatedHours}시간</strong></span>
+                                        <span className="text-slate-500">생성(반올림): <strong className={`${isMatch ? 'text-green-600' : 'text-red-600'}`}>{generatedHours}시간</strong></span>
                                         {!isMatch && <span className="text-xs text-red-500 font-bold bg-red-100 px-2 py-0.5 rounded-full">오차 발생</span>}
                                     </div>
                                 </div>
@@ -132,7 +133,7 @@ export const AttendancePreviewDialog = ({ open, onOpenChange, logs, targets, onS
                                             <th className="px-4 py-1.5 text-center w-20 border-b">퇴근</th>
                                             <th className="px-4 py-1.5 text-center w-20 border-b">휴게</th>
                                             <th className="px-4 py-1.5 text-center w-24 border-b text-slate-600">실제근무</th>
-                                            <th className="px-4 py-1.5 text-center w-24 border-b font-bold text-green-700">인정근무</th>
+                                            <th className="px-4 py-1.5 text-center w-24 border-b font-bold text-green-700">인정시간(반올림)</th>
                                             <th className="px-4 py-1.5 w-32 border-b">비고 (사유)</th>
                                         </tr>
                                     </thead>
@@ -143,7 +144,7 @@ export const AttendancePreviewDialog = ({ open, onOpenChange, logs, targets, onS
                                             const m = actual % 60;
                                             const actualTimeStr = `${h}시간` + (m > 0 ? ` ${m}분` : '');
 
-                                            // Recognized hours (rounded to nearest hour)
+                                            // Recognized hours (Rounding - User Requirement)
                                             const recognizedHours = Math.round(actual / 60);
                                             const recognizedTimeStr = `${recognizedHours}시간`;
 

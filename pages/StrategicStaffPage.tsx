@@ -6,6 +6,7 @@ import { Plus, RefreshCw, UserCheck, ShieldAlert, MoreHorizontal, Pencil, Trash2
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useData } from '@/contexts/DataContext';
+import { useMessageModal } from '@/contexts/MessageModalContext';
 
 interface ProjectStaff {
     id: string;
@@ -27,6 +28,7 @@ interface LeaveRecord {
 export const StrategicStaffPage = () => {
     const [staff, setStaff] = useState<ProjectStaff[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const { showAlert, showConfirm } = useMessageModal();
 
     // Scenario State
     const [scenario, setScenario] = useState('month_end');
@@ -55,7 +57,7 @@ export const StrategicStaffPage = () => {
         try {
             const res = await fetch(`/api/strategic?companyId=${companyId}`);
             if (res.ok) {
-                const data = await res.json();
+                const data = await res.json() as ProjectStaff[];
                 setStaff(data);
             }
         } catch (error) {
@@ -70,7 +72,7 @@ export const StrategicStaffPage = () => {
         try {
             const res = await fetch(`/api/strategic/leaves?staffId=${staffId}`);
             if (res.ok) {
-                const data = await res.json();
+                const data = await res.json() as LeaveRecord[];
                 setLeaves(data);
             }
         } catch (error) {
@@ -116,16 +118,17 @@ export const StrategicStaffPage = () => {
                 setIsDialogOpen(false);
                 fetchStaff();
             } else {
-                alert('저장에 실패했습니다.');
+                await showAlert('저장에 실패했습니다.', { type: 'error' });
             }
         } catch (error) {
             console.error(error);
-            alert('오류가 발생했습니다.');
+            await showAlert('오류가 발생했습니다.', { type: 'error' });
         }
     };
 
     const handleDelete = async (id: string, name: string) => {
-        if (!confirm(`'${name}' 인력을 삭제하시겠습니까?`)) return;
+        const confirmed = await showConfirm(`'${name}' 인력을 삭제하시겠습니까?`, { title: '삭제 확인', type: 'warning', confirmText: '삭제' });
+        if (!confirmed) return;
         try {
             const res = await fetch(`/api/strategic/${id}`, { method: 'DELETE' });
             if (res.ok) fetchStaff();
@@ -153,7 +156,11 @@ export const StrategicStaffPage = () => {
 
     const handleGenerateLeaves = async () => {
         if (!selectedStaffForLeave) return;
-        if (!confirm(`${new Date().getFullYear()}년도 정기 연차 계획을 '${getScenarioName(scenario)}' 시나리오로 생성하시겠습니까?\n(기존 계획에 추가됩니다)`)) return;
+        const confirmed = await showConfirm(`${new Date().getFullYear()}년도 정기 연차 계획을 '${getScenarioName(scenario)}' 시나리오로 생성하시겠습니까?\n(기존 계획에 추가됩니다)`, {
+            title: '연차 계획 생성',
+            type: 'info'
+        });
+        if (!confirmed) return;
 
         try {
             const res = await fetch(`/api/strategic/leaves`, {

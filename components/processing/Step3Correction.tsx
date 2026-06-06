@@ -15,6 +15,7 @@ interface Step3CorrectionProps {
     comparisonResult: any; // Result from useMemo
     searchTerm: string;
     onGlobalNightCorrection: () => void;
+    onApplyNaturalOvertime: () => void; // [NEW]
     onMoveToStep4: () => void; // [NEW] Handler
 }
 
@@ -27,6 +28,7 @@ export const Step3Correction: React.FC<Step3CorrectionProps> = ({
     comparisonResult,
     searchTerm,
     onGlobalNightCorrection,
+    onApplyNaturalOvertime, // [NEW]
     onMoveToStep4
 }) => {
     const v2Logs = data?.v2 || [];
@@ -60,6 +62,8 @@ export const Step3Correction: React.FC<Step3CorrectionProps> = ({
                     {...sidebarProps}
                     isReadOnly={false}
                     onGlobalNightCorrection={onGlobalNightCorrection}
+                    onApplyNaturalOvertime={onApplyNaturalOvertime}
+                    onMoveToStep4={onMoveToStep4}
                 />
             </div>
         );
@@ -97,6 +101,8 @@ export const Step3Correction: React.FC<Step3CorrectionProps> = ({
                 {...sidebarProps}
                 isReadOnly={false}
                 onGlobalNightCorrection={onGlobalNightCorrection}
+                onApplyNaturalOvertime={onApplyNaturalOvertime}
+                onMoveToStep4={onMoveToStep4}
             />
         </div>
     );

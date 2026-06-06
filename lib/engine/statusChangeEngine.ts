@@ -95,7 +95,7 @@ export const calculateStatusChangeUpdates = (
         };
     };
 
-    if (newStatus === LogStatus.VACATION || newStatus === LogStatus.SICK || newStatus === LogStatus.REST || newStatus === LogStatus.OTHER) {
+    if (newStatus === LogStatus.VACATION || newStatus === LogStatus.SICK || newStatus === LogStatus.REST || newStatus === LogStatus.OTHER || newStatus === LogStatus.RESIGNED || newStatus === LogStatus.PRE_JOIN) {
         return { ...updates, ...setZero() };
     }
 

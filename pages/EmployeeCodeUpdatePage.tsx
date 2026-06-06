@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Upload, FileDown, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { cn } from '@/lib/utils';
+import { useMessageModal } from '@/contexts/MessageModalContext';
 
 interface UpdateResult {
     success: boolean;
@@ -12,6 +13,7 @@ interface UpdateResult {
     successCount: number;
     failCount: number;
     failedNames: string[];
+    message?: string;
 }
 
 const EmployeeCodeUpdatePage = () => {
@@ -20,6 +22,7 @@ const EmployeeCodeUpdatePage = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [previewData, setPreviewData] = useState<{ name: string, code: string }[]>([]);
     const [result, setResult] = useState<UpdateResult | null>(null);
+    const { showAlert, showConfirm } = useMessageModal();
 
     useEffect(() => {
         const userStr = localStorage.getItem('user');
@@ -38,7 +41,7 @@ const EmployeeCodeUpdatePage = () => {
 
     const parseExcel = async (file: File) => {
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
             const data = e.target?.result;
             const workbook = XLSX.read(data, { type: 'binary' });
             const sheetName = workbook.SheetNames[0];
@@ -65,7 +68,7 @@ const EmployeeCodeUpdatePage = () => {
             }
 
             if (nameIdx === -1 || codeIdx === -1) {
-                alert('엑셀에서 "사원명"과 "사원코드" 열을 찾을 수 없습니다.');
+                await showAlert('엑셀에서 "사원명"과 "사원코드" 열을 찾을 수 없습니다.', { type: 'error' });
                 return;
             }
 
@@ -90,7 +93,8 @@ const EmployeeCodeUpdatePage = () => {
     const handleUpdate = async () => {
         if (!user?.company_id || previewData.length === 0) return;
 
-        if (!confirm(`${previewData.length}건의 사원코드를 업데이트하시겠습니까?`)) return;
+        const confirmed = await showConfirm(`${previewData.length}건의 사원코드를 업데이트하시겠습니까?`, { title: '업데이트 확인', type: 'info', confirmText: '업데이트' });
+        if (!confirmed) return;
 
         setIsProcessing(true);
         try {
@@ -103,15 +107,15 @@ const EmployeeCodeUpdatePage = () => {
                 })
             });
 
-            const data = await res.json();
+            const data = await res.json() as UpdateResult;
             if (data.success) {
                 setResult(data);
             } else {
-                alert('업데이트 실패: ' + data.message);
+                await showAlert('업데이트 실패: ' + data.message, { type: 'error' });
             }
         } catch (e: any) {
             console.error(e);
-            alert('오류 발생: ' + e.message);
+            await showAlert('오류 발생: ' + e.message, { type: 'error' });
         } finally {
             setIsProcessing(false);
         }

@@ -104,8 +104,17 @@ export const onRequestPost = async (context: any) => {
             for (let i = 0; i < dates.length; i += DATE_CHUNK) {
                 const chunk = dates.slice(i, i + DATE_CHUNK);
                 const placeholders = chunk.map(() => '?').join(',');
+
+                // 1. Delete from main work_logs
                 deleteOps.push(
                     env.DB.prepare(`DELETE FROM work_logs WHERE employee_id = ? AND work_date IN (${placeholders})`)
+                        .bind(eid, ...chunk)
+                );
+
+                // 2. [Fix] Delete from special_work_logs to prevent "Shadowing"
+                // If we corrected a log in the calendar, it should override any ghost-generated special log.
+                deleteOps.push(
+                    env.DB.prepare(`DELETE FROM special_work_logs WHERE employee_id = ? AND work_date IN (${placeholders})`)
                         .bind(eid, ...chunk)
                 );
             }

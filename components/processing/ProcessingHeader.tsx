@@ -16,11 +16,11 @@ export const ProcessingHeader: React.FC<ProcessingHeaderProps> = ({ step, setSte
             {/* Header Section */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h2 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+                    <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2 text-slate-900">
                         근태 데이터 관리
                         <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-bold border border-blue-200">Beta</span>
                     </h2>
-                    <p className="text-muted-foreground mt-1">
+                    <p className="text-sm text-slate-500 mt-1">
                         데이터 업로드 및 확인, 최종 관리 프로세스입니다.
                     </p>
                 </div>

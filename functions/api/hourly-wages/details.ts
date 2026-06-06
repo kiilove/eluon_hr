@@ -17,7 +17,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         // Join to get extra info if needed, or just plain items
         // Left join regular_employees to get codes if they exist?
         const { results: items } = await context.env.DB.prepare(`
-            SELECT i.*, e.employee_id as employee_code 
+            SELECT i.*, e.employee_code as employee_code, e.name as employee_name 
             FROM hourly_wage_values i
             LEFT JOIN regular_employees e ON i.employee_id = e.id
             WHERE i.set_id = ?

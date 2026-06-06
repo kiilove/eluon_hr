@@ -3,14 +3,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { Calendar } from 'lucide-react';
 import { ExcelReportGenerator } from '../lib/excelReportGenerator';
-import { ProcessedWorkLog, LogStatus, GlobalConfig } from '../types';
+import { ProcessedWorkLog, LogStatus, GlobalConfig, ApiResponse } from '../types';
 import { TimeUtils } from '../lib/timeUtils';
+import { useMessageModal } from '@/contexts/MessageModalContext';
 
 export const Dashboard = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [logs, setLogs] = useState<ProcessedWorkLog[]>([]);
     const [startDate, setStartDate] = useState<string>('');
     const [endDate, setEndDate] = useState<string>('');
+    const { showAlert } = useMessageModal();
 
     // Default Config for calculation (assuming standard 1h break)
     const config: GlobalConfig = {
@@ -31,7 +33,7 @@ export const Dashboard = () => {
             if (endDate) query.append('endDate', endDate);
 
             const res = await fetch(`/api/reports/logs?${query.toString()}`);
-            const json = await res.json();
+            const json = await res.json() as ApiResponse<any[]>;
 
             if (json.success) {
                 // Transform DB rows to ProcessedWorkLog
@@ -89,11 +91,11 @@ export const Dashboard = () => {
                 });
                 setLogs(processed);
             } else {
-                alert(json.message);
+                await showAlert(json.message || "오류 발생", { type: 'error' });
             }
         } catch (e) {
             console.error(e);
-            alert("데이터 조회 실패");
+            await showAlert("데이터 조회 실패", { type: 'error' });
         } finally {
             setIsLoading(false);
         }

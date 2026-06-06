@@ -40,23 +40,36 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         // This ensures the Calendar reflects ONLY what is generated from this new Report (once generated).
         const [tY, tM] = targetMonth.split('-').map(Number);
         const mStart = `${targetMonth}-01`;
-        const nextM = new Date(tY, tM, 1); // Month is 0-indexed in Date? No, tM from split is 1-based (e.g. "12") -> Date(2025, 12, 1) is Jan 2026. Correct.
-        // Wait. "2025-12". split gives [2025, 12].
-        // new Date(2025, 12, 1). Month param is 0-11? Yes.
-        // So 12 is Jan next year. Perfect.
-        // What if "2025-01"? [2025, 1]. new Date(2025, 1, 1) is Feb 1st. Correct.
+        const nextM = new Date(tY, tM, 1);
         const mEnd = nextM.toISOString().slice(0, 10);
 
-        // Delete logs for this month AND this company (filtered by employee -> company)
-        // Ideally we should filter by company, but logs table doesn't have company_id.
-        // But employee_id is linked to regular_employees which has company_id.
-        // For strictness: DELETE FROM special_work_logs WHERE work_date... AND employee_id IN (SELECT id FROM regular_employees WHERE company_id = ?)
-        // Use subquery for safety
+        // 1. Delete actual logs for the calendar
         await db.prepare(`
             DELETE FROM special_work_logs 
             WHERE work_date >= ? AND work_date < ? 
             AND employee_id IN (SELECT id FROM regular_employees WHERE company_id = ?)
         `).bind(mStart, mEnd, companyId).run();
+
+        // 2. Delete existing Reports & associated data for this month/company
+        const { results: oldReports } = await db.prepare(`
+            SELECT DISTINCT r.id FROM special_work_reports r
+            WHERE r.target_month = ?
+            AND r.id IN (
+                SELECT i.report_id FROM special_work_items i
+                JOIN regular_employees e ON i.employee_id = e.id
+                WHERE e.company_id = ?
+            )
+        `).bind(targetMonth, companyId).all();
+
+        if (oldReports && oldReports.length > 0) {
+            for (const old of oldReports) {
+                const reportIdToDelete = old.id;
+                await db.prepare("DELETE FROM special_work_items WHERE report_id = ?").bind(reportIdToDelete).run();
+                await db.prepare("DELETE FROM special_work_employee_records WHERE report_id = ?").bind(reportIdToDelete).run();
+                await db.prepare("DELETE FROM special_work_logs WHERE report_id = ?").bind(reportIdToDelete).run();
+                await db.prepare("DELETE FROM special_work_reports WHERE id = ?").bind(reportIdToDelete).run();
+            }
+        }
 
 
         // [New] Fetch Multiplier (Since Engine is removed)
@@ -173,7 +186,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             // Calculate Attributes
             let calculatedHours = 0;
             if (specialHourlyWage > 0) {
-                calculatedHours = Math.round(totalAmount / specialHourlyWage);
+                // [Requirement] Hour calculation: Floor (Truncate) e.g. 2.7h -> 2h
+                calculatedHours = Math.floor(totalAmount / specialHourlyWage);
             }
 
             const record = {

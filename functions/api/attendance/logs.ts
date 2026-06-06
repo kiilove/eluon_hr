@@ -22,17 +22,16 @@ export const onRequestGet = async (context: any) => {
         }
 
         if (queryStartDate && queryEndDate) {
-            // Use provided range
+            // Use provided range (Inclusive)
             startDate = queryStartDate;
             endDate = queryEndDate;
         } else if (monthStr && /^\d{4}-\d{2}$/.test(monthStr)) {
             // Fallback to Month logic
-            const [year, month] = monthStr.split('-');
+            const [year, month] = monthStr.split('-').map(Number);
             startDate = `${monthStr}-01`;
-            const nextMonthDate = new Date(parseInt(year), parseInt(month), 1);
-            const nextMonthY = nextMonthDate.getFullYear();
-            const nextMonthM = String(nextMonthDate.getMonth() + 1).padStart(2, '0');
-            endDate = `${nextMonthY}-${nextMonthM}-01`;
+            const lastDayDate = new Date(year, month, 0); // Last day of target month
+            const lastD = String(lastDayDate.getDate()).padStart(2, '0');
+            endDate = `${monthStr}-${lastD}`;
         } else {
             return new Response(JSON.stringify({ success: false, message: 'Missing valid Month or Date Range' }), { status: 400 });
         }
@@ -41,7 +40,7 @@ export const onRequestGet = async (context: any) => {
         console.log(`[LogsAPI] Fetching Logs. Company: ${companyId}, Range: ${startDate} ~ ${endDate}`);
 
         // 1. Fetch Manual Logs (work_logs)
-        const { results: manualResults } = await env.DB.prepare(`
+        const { results: manualResultsRaw } = await env.DB.prepare(`
             SELECT 
                 l.id,
                 l.employee_id,
@@ -57,12 +56,12 @@ export const onRequestGet = async (context: any) => {
                 l.actual_work_minutes
             FROM work_logs l
             LEFT JOIN regular_employees u ON l.employee_id = u.id
-            WHERE l.company_id = ? AND l.work_date >= ? AND l.work_date < ?
+            WHERE l.company_id = ? AND l.work_date >= ? AND l.work_date <= ?
             ORDER BY l.work_date ASC
         `).bind(companyId, startDate, endDate).all();
 
         // 2. Fetch Special Logs (special_work_logs)
-        const { results: specialResults } = await env.DB.prepare(`
+        const { results: specialResultsRaw } = await env.DB.prepare(`
             SELECT 
                 l.id,
                 l.employee_id,
@@ -78,9 +77,53 @@ export const onRequestGet = async (context: any) => {
                 l.persona
             FROM special_work_logs l
             LEFT JOIN regular_employees u ON l.employee_id = u.id
-            WHERE l.company_id = ? AND l.work_date >= ? AND l.work_date < ?
+            WHERE l.company_id = ? AND l.work_date >= ? AND l.work_date <= ?
             ORDER BY l.work_date ASC
         `).bind(companyId, startDate, endDate).all();
+
+        // 2. Fetch Special Logs (special_work_logs)
+
+
+        // 3. Fetch Resignation Data to Filter Logs
+        // Logic: If there is a 'RESIGNED' status history, ignore logs AFTER that date.
+        const { results: resignedEmployees } = await env.DB.prepare(`
+            SELECT employee_id, effective_date 
+            FROM employee_status_history 
+            WHERE status = 'RESIGNED' 
+            AND employee_id IN (SELECT id FROM regular_employees WHERE company_id = ?)
+        `).bind(companyId).all();
+
+        const resignationMap = new Map<string, string>();
+        if (resignedEmployees) {
+            resignedEmployees.forEach((r: any) => {
+                const rDate = r.effective_date.split("T")[0];
+                // Keep the latest resignation date if multiple
+                const existing = resignationMap.get(r.employee_id);
+                if (!existing || rDate > existing) {
+                    resignationMap.set(r.employee_id, rDate);
+                }
+            });
+        }
+
+        const filterRetiredLogs = (logs: any[]) => {
+            return logs.filter(log => {
+                if (log.log_status === 'RESIGNED' || log.log_status === 'PRE_JOIN') {
+                    return true;
+                }
+                const retireDate = resignationMap.get(log.employee_id);
+                if (retireDate) {
+                    return log.work_date <= retireDate;
+                }
+                return true;
+            });
+        };
+
+        const manualResults = filterRetiredLogs(manualResultsRaw || []);
+        const specialResults = filterRetiredLogs(specialResultsRaw || []);
+
+        if ((manualResultsRaw?.length || 0) + (specialResultsRaw?.length || 0) > manualResults.length + specialResults.length) {
+            console.log(`[LogsAPI] Filtered out ${((manualResultsRaw?.length || 0) + (specialResultsRaw?.length || 0)) - (manualResults.length + specialResults.length)} logs due to resignation.`);
+        }
 
         // Helper to transform
         const transformLog = (r: any, type: 'MANUAL' | 'SPECIAL'): ProcessedWorkLog => ({

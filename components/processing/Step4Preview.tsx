@@ -43,8 +43,38 @@ export const Step4Preview: React.FC<Step4PreviewProps> = ({
 
     const activeMondays = Object.keys(filteredWeekGroups).sort();
 
+    // Check for unregistered employees across all logs
+    const unregisteredNames = useMemo(() => {
+        const names = new Set<string>();
+        Object.values(finalPreviewData.weekGroups).forEach(logs => {
+            logs.forEach(log => {
+                if (!log.employeeId && log.userName) {
+                    names.add(log.userName);
+                }
+            });
+        });
+        return Array.from(names);
+    }, [finalPreviewData]);
+
     return (
         <div className="space-y-6 animate-in zoom-in-95 duration-500 min-h-screen">
+            {/* Unregistered Warning Banner */}
+            {unregisteredNames.length > 0 && (
+                <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-xl shadow-sm animate-in slide-in-from-top duration-500">
+                    <div className="flex items-start gap-3">
+                        <Search className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
+                        <div>
+                            <h4 className="text-sm font-bold text-red-900">주의: 시급 명부에 등록되지 않은 직원이 포함되어 있습니다 ({unregisteredNames.length}명)</h4>
+                            <p className="text-xs text-red-700 mt-1 leading-relaxed">
+                                <strong>[{unregisteredNames.join(", ")}]</strong> 님은 현재 직원 명부(시급 데이터)에 없습니다.
+                                이 상태로 DB 저장을 진행하면 해당 직원의 근태 데이터는 <strong>제외(저장되지 않음)</strong>됩니다.<br />
+                                <span className="opacity-80">해당 직원을 포함하려면 먼저 [시급 관리] 탭에서 해당 직원의 시급 데이터를 업로드해주세요.</span>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Header / Toolbar */}
             <div className="flex flex-col md:flex-row gap-4 justify-between items-center bg-white p-4 rounded-xl border border-indigo-100 shadow-sm">
                 <div className="flex items-center gap-4 w-full md:w-auto">

@@ -8,8 +8,12 @@ import { saveAs } from 'file-saver';
 import { format } from 'date-fns';
 import { SpecialWorkCalculator } from '../lib/specialWorkCalculator';
 
+import { ApiResponse } from '../types';
+import { useMessageModal } from '@/contexts/MessageModalContext';
+
 const SpecialWorkExportPage = () => {
     const navigate = useNavigate();
+    const { showAlert } = useMessageModal();
     const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
     const [isLoading, setIsLoading] = useState(false);
 
@@ -18,15 +22,15 @@ const SpecialWorkExportPage = () => {
         try {
             // 1. Fetch Data
             const response = await fetch(`/api/special-work/export-logs?month=${selectedMonth}`);
-            const result = await response.json();
+            const result = await response.json() as ApiResponse<any[]>;
 
             if (!result.success) {
-                alert(`데이터 조회 실패: ${result.message}`);
+                await showAlert(`데이터 조회 실패: ${result.message}`, { type: 'error' });
                 return;
             }
 
             if (!result.data || result.data.length === 0) {
-                alert("해당 월에 조회된 특근 데이터가 없습니다.");
+                await showAlert("해당 월에 조회된 특근 데이터가 없습니다.", { type: 'info' });
                 return;
             }
 
@@ -122,7 +126,7 @@ const SpecialWorkExportPage = () => {
 
         } catch (e) {
             console.error(e);
-            alert("엑셀 생성 중 오류가 발생했습니다.");
+            await showAlert("엑셀 생성 중 오류가 발생했습니다.", { type: 'error' });
         } finally {
             setIsLoading(false);
         }

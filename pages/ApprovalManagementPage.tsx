@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { format, subMonths, addMonths, startOfMonth, endOfMonth } from 'date-fns';
+import { format, subMonths, addMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns';
 import { AlertTriangle, CheckCircle, FileDown, Lock, Unlock, Loader2, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
 import { ExcelReportGenerator } from '@/lib/excelReportGenerator';
 import { AttendanceMergeEngine } from '@/lib/engine/attendanceMergeEngine';
 import { ProcessedWorkLog } from '@/types';
+import { useMessageModal } from '@/contexts/MessageModalContext';
 
 const ApprovalManagementPage = () => {
     const { config } = useData();
+    const { showAlert, showConfirm } = useMessageModal();
     const [currentDate, setCurrentDate] = useState(new Date());
     const selectedMonth = format(currentDate, 'yyyy-MM');
 
@@ -83,7 +85,7 @@ const ApprovalManagementPage = () => {
         const isLockAction = action === 'lock';
 
         if (isLockAction && validationError) {
-            alert(validationError);
+            await showAlert(validationError, { type: 'error' });
             return;
         }
 
@@ -92,7 +94,8 @@ const ApprovalManagementPage = () => {
             : `${selectedMonth}월 결재를 [취소/잠금 해제] 하시겠습니까?\n이제 데이터 수정이 가능해집니다.`;
 
         // eslint-disable-next-line no-restricted-globals
-        if (!confirm(confirmMsg)) return;
+        const confirmed = await showConfirm(confirmMsg, { title: isLockAction ? '결재 승인' : '결재 취소', type: isLockAction ? 'warning' : 'info' });
+        if (!confirmed) return;
 
         try {
             setIsLoading(true);
@@ -105,30 +108,70 @@ const ApprovalManagementPage = () => {
             if (data.success) {
                 // Optimistically update
                 setIsLocked(isLockAction);
-                alert(isLockAction ? '결재가 완료되었습니다.' : '결재가 취소(잠금 해제)되었습니다.');
+                await showAlert(isLockAction ? '결재가 완료되었습니다.' : '결재가 취소(잠금 해제)되었습니다.', { type: 'success' });
                 fetchStatus();
             } else {
-                alert('처리 실패: ' + (data.message || 'Unknown Error'));
+                await showAlert('처리 실패: ' + (data.message || 'Unknown Error'), { type: 'error' });
             }
         } catch (error) {
-            alert('오류 발생');
+            await showAlert('오류 발생', { type: 'error' });
         } finally {
             setIsLoading(false);
         }
     };
 
     const handleDownloadExcel = async () => {
-        if (logs.length === 0) {
-            alert('데이터가 없습니다.');
-            return;
-        }
-
         try {
-            // Use existing Monthly Report Generator
-            await ExcelReportGenerator.generateMonthlyReport(logs, selectedMonth);
+            setIsLoading(true);
+
+            const [y, m] = selectedMonth.split('-');
+            const year = parseInt(y);
+            const month = parseInt(m);
+            const mStart = startOfMonth(new Date(year, month - 1, 1));
+            const mEnd = endOfMonth(mStart);
+            const cStart = startOfWeek(mStart, { weekStartsOn: 1 });
+            const cEnd = endOfWeek(mEnd, { weekStartsOn: 1 });
+
+            const sDate = format(cStart, 'yyyy-MM-dd');
+            const eDate = format(cEnd, 'yyyy-MM-dd');
+
+            // Get User Company ID from local storage
+            const userStr = localStorage.getItem('user');
+            const userObj = userStr ? JSON.parse(userStr) : null;
+            const companyId = userObj?.company_id || '';
+
+            if (!companyId) {
+                await showAlert('회사 정보가 없습니다.', { type: 'error' });
+                return;
+            }
+
+            const logsRes = await fetch(`/api/attendance/logs?startDate=${sDate}&endDate=${eDate}&companyId=${companyId}`);
+            const logsData = await logsRes.json() as { success: boolean, manualLogs: [], specialLogs: [], message?: string };
+
+            if (!logsData.success) {
+                throw new Error(logsData.message || 'API Error');
+            }
+
+            const merged = AttendanceMergeEngine.mergeLogs(
+                logsData.manualLogs || [],
+                logsData.specialLogs || []
+            );
+
+            if (merged.length === 0) {
+                await showAlert('데이터가 없습니다.', { type: 'info' });
+                return;
+            }
+
+            await ExcelReportGenerator.generateMonthlyReport(
+                merged,
+                selectedMonth,
+                { name: userObj?.name || '관리자', company_id: companyId }
+            );
         } catch (e) {
             console.error(e);
-            alert('엑셀 생성 중 오류가 발생했습니다.');
+            await showAlert('엑셀 생성 중 오류가 발생했습니다.', { type: 'error' });
+        } finally {
+            setIsLoading(false);
         }
     };
 

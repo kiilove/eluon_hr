@@ -35,7 +35,9 @@ export const WorkHourCalculator = {
             snappedEnd: processedEnd,
             actualWork,
             totalDuration,
-            breakDuration
+            breakDuration,
+            overtimeDuration,
+            nightWorkDuration
         } = calculateActualWork(rawStart, rawEnd, config);
 
         // If 'disableSnap' is true, we revert to raw (Though calculateActualWork enforces strict rules usually)
@@ -167,10 +169,10 @@ export const WorkHourCalculator = {
             userTitle: log.userTitle,
             department: log.department,
             date: log.date,
-            // Return RAW times for display (User Request: "Don't correct yet")
-            startTime: rawStart,
-            endTime: rawEnd,
-            // Keep specific raw fields just in case
+            // Return Snapped times for visibility and consistent calculation (User Request)
+            startTime: processedStart,
+            endTime: processedEnd,
+            // Keep specific raw fields for reference
             rawStartTime: rawStart,
             rawEndTime: rawEnd,
 
@@ -183,10 +185,10 @@ export const WorkHourCalculator = {
             totalDuration: totalDuration,
             breakDuration: breakDuration,
             actualWorkDuration: actualWork,
-            overtimeDuration: (!isStandardWorkDay && (isWeekend || isHoliday)) ? 0 : Math.max(0, actualWork - (8 * 60)),
+            overtimeDuration: (!isStandardWorkDay && (isWeekend || isHoliday)) ? 0 : overtimeDuration,
             specialWorkMinutes: (!isStandardWorkDay && (isWeekend || isHoliday)) ? actualWork : 0,
 
-            nightWorkDuration: 0,
+            nightWorkDuration: nightWorkDuration,
             restDuration: 0,
             workType: 'BASIC',
             isHoliday: (!isStandardWorkDay && (isWeekend || isHoliday)),
@@ -240,11 +242,7 @@ export const WorkHourCalculator = {
         const analyzedLogs = WorkHourCalculator.detectAnomalies(logs);
 
         const getWeekKey = (dateStr: string) => {
-            const d = new Date(dateStr);
-            const day = d.getDay();
-            const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-            const monday = new Date(d.setDate(diff));
-            return `${monday.getFullYear()}-${monday.getMonth()}-${monday.getDate()}`;
+            return TimeUtils.toDateString(TimeUtils.getMondayOfDate(dateStr));
         };
 
         const weekGroups: Record<string, ProcessedWorkLog[]> = {};

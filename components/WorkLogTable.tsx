@@ -52,7 +52,7 @@ const StatusBadge = ({ status }: { status: 'PASS' | 'WARNING' | 'VIOLATION' }) =
 };
 
 export const WorkLogTable = ({ logs, sortOption = 'NAME', onUpdateLog, changeMap }: WorkLogTableProps) => {
-    const { config } = useData();
+    const { config, policies } = useData();
 
     if (logs.length === 0) {
         return <div className="p-8 text-center text-muted-foreground">데이터가 없습니다.</div>;
@@ -168,8 +168,8 @@ export const WorkLogTable = ({ logs, sortOption = 'NAME', onUpdateLog, changeMap
                                     <tr className="border-b border-border/50 bg-muted/10">
                                         <th className="px-4 py-3 w-24 font-medium text-muted-foreground bg-muted/20 sticky left-0 z-10 border-r border-border/50">구분</th>
                                         {sortedLogs.map(log => {
-                                            const dateObj = new Date(log.date);
-                                            const dayOfWeek = dateObj.getDay();
+                                            const [y, m, d] = log.date.split('-').map(Number);
+                                            const dayOfWeek = new Date(y, m - 1, d).getDay();
                                             const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
                                             const changes = changeMap?.get(log.id) || [];
@@ -246,7 +246,7 @@ export const WorkLogTable = ({ logs, sortOption = 'NAME', onUpdateLog, changeMap
                                                 log.status === 'ERROR' && "bg-red-50 dark:bg-red-900/20 border-x-2 border-red-500"
                                             )}>
                                                 <div className="flex flex-col items-center gap-1">
-                                                    <LogStatusSelect log={log} onUpdateLog={onUpdateLog} />
+                                                    <WorkLogStatusCell log={log} onUpdateLog={onUpdateLog} />
                                                     {log.status === 'ERROR' && log.note && (
                                                         <span className="text-[10px] text-red-600 font-bold break-words w-24 leading-tight">
                                                             {log.note}
@@ -263,7 +263,11 @@ export const WorkLogTable = ({ logs, sortOption = 'NAME', onUpdateLog, changeMap
                                             업무시작
                                         </td>
                                         {sortedLogs.map(log => {
-                                            const { text, subText, className, isTime } = getLogCellDisplay(log, 'start', config);
+                                            // [Fix] Get Policy Config for the specific date to show correct Snap (e.g. 11:00 for Discretionary)
+                                            const effectivePolicy = PolicyUtils.getPolicyForDate(log.date, policies);
+                                            const activeConfig = effectivePolicy ? PolicyUtils.toGlobalConfig(effectivePolicy) : config;
+
+                                            const { text, subText, className, isTime } = getLogCellDisplay(log, 'start', activeConfig);
                                             return (
                                                 <td key={`in-${log.id}`} className={cn(
                                                     "px-2 py-2 text-center border-r border-border/50 last:border-0 align-top",
@@ -298,7 +302,11 @@ export const WorkLogTable = ({ logs, sortOption = 'NAME', onUpdateLog, changeMap
                                             업무종료
                                         </td>
                                         {sortedLogs.map(log => {
-                                            const { text, subText, className, isTime } = getLogCellDisplay(log, 'end', config);
+                                            // [Fix] Get Policy Config for the specific date
+                                            const effectivePolicy = PolicyUtils.getPolicyForDate(log.date, policies);
+                                            const activeConfig = effectivePolicy ? PolicyUtils.toGlobalConfig(effectivePolicy) : config;
+
+                                            const { text, subText, className, isTime } = getLogCellDisplay(log, 'end', activeConfig);
                                             return (
                                                 <td key={`out-${log.id}`} className={cn(
                                                     "px-2 py-2 text-center border-r border-border/50 last:border-0 align-top",
@@ -363,7 +371,9 @@ export const WorkLogTable = ({ logs, sortOption = 'NAME', onUpdateLog, changeMap
                                     <tr className="hover:bg-muted/30">
                                         <td className="px-4 py-2 font-medium text-muted-foreground bg-muted/10 sticky left-0 z-10 border-r border-border/50">연장</td>
                                         {sortedLogs.map(log => {
-                                            const isSpecial = log.isHoliday || new Date(log.date).getDay() % 6 === 0;
+                                            const [y_comp, m_comp, d_comp] = log.date.split('-').map(Number);
+                                            const dayOfWeek = new Date(y_comp, m_comp - 1, d_comp).getDay();
+                                            const isSpecial = log.isHoliday || dayOfWeek % 6 === 0;
                                             const showOvertime = !isSpecial && log.overtimeDuration > 0;
                                             return (
                                                 <td key={`ot-${log.id}`} className={cn(
@@ -417,18 +427,18 @@ export const WorkLogTable = ({ logs, sortOption = 'NAME', onUpdateLog, changeMap
 };
 
 // Sub-component for Status Select & Duplicate Resolution
-const LogStatusSelect = ({ log, onUpdateLog }: { log: any, onUpdateLog?: any }) => {
+import { LogStatusSelect as SharedLogStatusSelect } from "./common/LogStatusSelect";
+
+const WorkLogStatusCell = ({ log, onUpdateLog }: { log: any, onUpdateLog?: any }) => {
     const { updateLog: contextUpdateLog, config, policies } = useData();
     const updateLog = onUpdateLog || contextUpdateLog;
 
-    const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const newStatus = e.target.value as LogStatus;
-
+    const handleChange = (val: LogStatus) => {
         // [Policy Aware] Use active config for the specific date
         const effectivePolicy = PolicyUtils.getPolicyForDate(log.date, policies);
         const activeConfig = effectivePolicy ? PolicyUtils.toGlobalConfig(effectivePolicy) : config;
 
-        const updates = calculateStatusChangeUpdates(log, newStatus, activeConfig);
+        const updates = calculateStatusChangeUpdates(log, val, activeConfig);
         updateLog(log.id, updates);
     };
 
@@ -468,27 +478,10 @@ const LogStatusSelect = ({ log, onUpdateLog }: { log: any, onUpdateLog?: any }) 
     }
 
     return (
-        <select
+        <SharedLogStatusSelect
             value={log.logStatus || LogStatus.NORMAL}
             onChange={handleChange}
-            className={cn(
-                "text-xs border border-border/50 rounded px-2 py-1 bg-background focus:ring-1 focus:ring-primary outline-none",
-                log.logStatus === LogStatus.VACATION && "text-blue-500 border-blue-200 bg-blue-50",
-                log.logStatus === LogStatus.TRIP && "text-indigo-500 border-indigo-200 bg-indigo-50",
-                log.logStatus === LogStatus.SPECIAL && "text-purple-500 border-purple-200 bg-purple-50",
-                log.logStatus === LogStatus.REST && "text-slate-500 border-slate-200 bg-slate-50",
-                log.logStatus === LogStatus.SICK && "text-red-500 border-red-200 bg-red-50"
-            )}
-        >
-            <option value={LogStatus.NORMAL}>정상</option>
-            <option value={LogStatus.REST}>휴무</option>
-            <option value={LogStatus.SPECIAL}>특근</option>
-            <option value={LogStatus.VACATION}>휴가</option>
-            <option value={LogStatus.TRIP}>출장</option>
-            <option value={LogStatus.EDUCATION}>교육</option>
-            <option value={LogStatus.SICK}>병가</option>
-            <option value={LogStatus.OTHER}>기타</option>
-        </select>
+        />
     );
 };
 

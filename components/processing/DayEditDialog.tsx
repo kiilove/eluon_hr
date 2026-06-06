@@ -10,6 +10,7 @@ import { calculateStatusChangeUpdates } from '../../lib/engine/statusChangeEngin
 import { useData } from '../../contexts/DataContext';
 import { SpecialWorkCalculator } from '../../lib/specialWorkCalculator';
 import { cn } from '../../lib/utils';
+import { LogStatusSelect } from '../common/LogStatusSelect';
 
 interface DayEditDialogProps {
     isOpen: boolean;
@@ -217,27 +218,10 @@ export const DayEditDialog: React.FC<DayEditDialogProps> = ({ isOpen, onClose, d
                                                 <div className="text-xs text-slate-500">{log.department}</div>
                                             </td>
                                             <td className="p-2 text-center">
-                                                <select
+                                                <LogStatusSelect
                                                     value={log.logStatus || LogStatus.NORMAL}
-                                                    onChange={(e) => handleStatusChange(log.id, e.target.value as LogStatus)}
-                                                    className={cn(
-                                                        "text-xs border border-border/50 rounded px-2 py-1 bg-background focus:ring-1 focus:ring-primary outline-none",
-                                                        log.logStatus === LogStatus.VACATION && "text-blue-500 border-blue-200 bg-blue-50",
-                                                        log.logStatus === LogStatus.TRIP && "text-indigo-500 border-indigo-200 bg-indigo-50",
-                                                        log.logStatus === LogStatus.SPECIAL && "text-purple-500 border-purple-200 bg-purple-50",
-                                                        log.logStatus === LogStatus.REST && "text-slate-500 border-slate-200 bg-slate-50",
-                                                        log.logStatus === LogStatus.SICK && "text-red-500 border-red-200 bg-red-50"
-                                                    )}
-                                                >
-                                                    <option value={LogStatus.NORMAL}>정상</option>
-                                                    <option value={LogStatus.REST}>휴무</option>
-                                                    <option value={LogStatus.SPECIAL}>특근</option>
-                                                    <option value={LogStatus.VACATION}>휴가</option>
-                                                    <option value={LogStatus.TRIP}>출장</option>
-                                                    <option value={LogStatus.EDUCATION}>교육</option>
-                                                    <option value={LogStatus.SICK}>병가</option>
-                                                    <option value={LogStatus.OTHER}>기타</option>
-                                                </select>
+                                                    onChange={(val) => handleStatusChange(log.id, val)}
+                                                />
                                             </td>
                                             <td className="p-2 text-center">
                                                 <CustomTimeInput

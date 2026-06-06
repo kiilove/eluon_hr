@@ -61,11 +61,11 @@ export const ImageAnalyzer = () => {
             });
 
             if (!res.ok) {
-                const errData = await res.json();
+                const errData = await res.json() as any;
                 throw new Error(errData.error || errData.details || "API Request Failed");
             }
 
-            const data = await res.json();
+            const data = await res.json() as any;
             setResult(data.text);
 
         } catch (error: any) {

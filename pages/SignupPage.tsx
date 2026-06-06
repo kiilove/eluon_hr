@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useMessageModal } from '@/contexts/MessageModalContext';
 
 export const SignupPage = () => {
     const navigate = useNavigate();
@@ -14,6 +15,7 @@ export const SignupPage = () => {
     });
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const { showAlert } = useMessageModal();
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData(prev => ({ ...prev, [e.target.id]: e.target.value }));
@@ -41,12 +43,12 @@ export const SignupPage = () => {
                     companyId: formData.companyId
                 }),
             });
-            const data = await res.json();
+            const data = await res.json() as any;
 
             if (!res.ok) throw new Error(data.error || 'Signup failed');
 
             // Success -> Auto Login or Redirect to Login
-            alert('가입이 완료되었습니다. 로그인해주세요.');
+            await showAlert('가입이 완료되었습니다. 로그인해주세요.', { type: 'success' });
             navigate('/login');
 
         } catch (err) {

@@ -27,7 +27,7 @@ export const PageHeader = ({ title, description, badges, actions }: PageHeaderPr
     return (
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
             <div className="space-y-1">
-                <h2 className="text-3xl font-extrabold tracking-tight flex items-center gap-2 text-slate-900 font-sans">
+                <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2 text-slate-900">
                     {title}
                     {badges?.map((b, i) => (
                         <span key={i} className={cn("px-2.5 py-0.5 rounded-full text-xs font-bold border", b.color)}>
@@ -35,7 +35,7 @@ export const PageHeader = ({ title, description, badges, actions }: PageHeaderPr
                         </span>
                     ))}
                 </h2>
-                {description && <p className="text-slate-500 text-sm font-medium">{description}</p>}
+                {description && <p className="text-sm text-slate-500">{description}</p>}
             </div>
             {actions && <div className="flex items-center gap-2">{actions}</div>}
         </div>

@@ -35,12 +35,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         const { email, password } = await context.request.json() as any;
 
         // 1. Get User Profile & Credentials
-        const result = await context.env.DB.prepare(`
-        SELECT u.*, uc.password_hash, uc.salt 
-        FROM users u
-        JOIN user_credentials uc ON u.id = uc.user_id
-        WHERE u.email = ?
-    `).bind(email).first();
+        let result;
+        try {
+            result = await context.env.DB.prepare(`
+                SELECT u.*, uc.password_hash, uc.salt
+                FROM users u
+                JOIN user_credentials uc ON u.id = uc.user_id
+                WHERE u.email = ?
+            `).bind(email).first() as any;
+        } catch (dbError) {
+            console.error("[Login] Database query failed:", dbError);
+            return new Response(JSON.stringify({ error: "System error. Please try again later." }), { status: 500 });
+        }
 
         if (!result) {
             return new Response(JSON.stringify({ error: "Invalid credentials" }), { status: 401 });
@@ -67,6 +73,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         });
 
     } catch (e) {
-        return new Response(JSON.stringify({ error: (e as Error).message }), { status: 500 });
+        console.error("[Login] Unexpected error:", e);
+        return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500 });
     }
 };

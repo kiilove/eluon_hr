@@ -6,7 +6,7 @@ import { useData } from '@/contexts/DataContext';
 
 export const LoginPage = () => {
     const navigate = useNavigate();
-    const { login } = useData(); // We will add login to DataContext later
+    const { login } = useData() as any; // login might be added later, cast to any for now
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -23,7 +23,7 @@ export const LoginPage = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password }),
             });
-            const data = await res.json();
+            const data = await res.json() as any;
 
             if (!res.ok) throw new Error(data.error || 'Login failed');
 
@@ -86,9 +86,14 @@ export const LoginPage = () => {
                             />
                         </div>
                         <div className="space-y-2">
-                            <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70" htmlFor="password">
-                                비밀번호
-                            </label>
+                            <div className="flex items-center justify-between">
+                                <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70" htmlFor="password">
+                                    비밀번호
+                                </label>
+                                <Link to="/forgot-password" className="text-xs text-primary hover:underline">
+                                    비밀번호 찾기
+                                </Link>
+                            </div>
                             <Input
                                 id="password"
                                 type="password"

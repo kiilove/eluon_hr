@@ -5,8 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { UploadCloud, BadgeCheck, ChevronLeft, ChevronRight, Save, FileSpreadsheet, AlertCircle, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { LoadingOverlay } from '../ui/LoadingOverlay';
+import { useMessageModal } from '@/contexts/MessageModalContext';
 
 export const SpecialWorkUploadView = ({ setActiveTab }: { setActiveTab: (tab: any) => void }) => {
+    const { showAlert, showConfirm } = useMessageModal();
     const [report, setReport] = useState<SettlementReport | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const today = new Date();
@@ -51,14 +53,44 @@ export const SpecialWorkUploadView = ({ setActiveTab }: { setActiveTab: (tab: an
                 configs: dynamicConfigs.length > 0 ? dynamicConfigs : undefined
             });
 
-            if (finalResult.details.length === 0) alert("파싱된 데이터가 없습니다.");
+            if (finalResult.details.length === 0) await showAlert("파싱된 데이터가 없습니다.", { type: 'warning' });
+
+            // [New] Early Overlap Check
+            const activeMonth = finalResult.targetMonth;
+            if (activeMonth) {
+                const userStr = localStorage.getItem('user');
+                const user = userStr ? JSON.parse(userStr) : null;
+                const companyId = user?.company_id;
+
+                if (companyId) {
+                    const checkRes = await fetch(`/api/special-work/reports?month=${activeMonth}&companyId=${companyId}`);
+                    const checkResult = await checkRes.json() as any;
+                    if (checkResult.success && checkResult.data?.length > 0) {
+                        setIsProcessing(false); // Hide loading to show modal
+                        const confirmed = await showConfirm(
+                            `${activeMonth}의 특근 데이터가 이미 시스템에 존재합니다.\n새로운 파일을 업로드하고 분석하면 기존 데이터는 모두 삭제됩니다.\n\n계속 분석하시겠습니까?`,
+                            {
+                                title: '데이터 중복 감지',
+                                type: 'warning',
+                                confirmText: '계속 분석',
+                                cancelText: '취소'
+                            }
+                        );
+                        if (!confirmed) {
+                            e.target.value = '';
+                            return;
+                        }
+                        setIsProcessing(true); // Restart loading for last steps
+                    }
+                }
+            }
 
             setReport(finalResult);
             if (finalResult.targetMonth) setTargetMonth(finalResult.targetMonth);
 
         } catch (error) {
             console.error(error);
-            alert(`파일 파싱 중 오류가 발생했습니다: ${error}`);
+            await showAlert(`파일 파싱 중 오류가 발생했습니다: ${error}`, { type: 'error' });
         } finally {
             setIsProcessing(false);
             e.target.value = '';
@@ -67,8 +99,6 @@ export const SpecialWorkUploadView = ({ setActiveTab }: { setActiveTab: (tab: an
 
     const handleSaveToDB = async () => {
         if (!report) return;
-        setIsProcessing(true);
-        await new Promise(resolve => setTimeout(resolve, 100)); // Force UI Update
 
         try {
             const [y, m] = targetMonth.split('-');
@@ -80,9 +110,13 @@ export const SpecialWorkUploadView = ({ setActiveTab }: { setActiveTab: (tab: an
             const companyId = user?.company_id;
 
             if (!companyId) {
-                alert("사용자 정보(회사 코드)를 찾을 수 없습니다. 다시 로그인해주세요.");
+                await showAlert("사용자 정보(회사 코드)를 찾을 수 없습니다. 다시 로그인해주세요.", { type: 'error' });
                 return;
             }
+
+            // Start Real Processing
+            setIsProcessing(true);
+            await new Promise(resolve => setTimeout(resolve, 100)); // Force UI Update
 
             const response = await fetch('/api/special-work/sync', {
                 method: 'POST',
@@ -96,18 +130,22 @@ export const SpecialWorkUploadView = ({ setActiveTab }: { setActiveTab: (tab: an
                 })
             });
             const result: any = await response.json();
+
+            setIsProcessing(false); // [Fix] Hide loading BEFORE showing the alert
+
             if (response.ok && result.success) {
                 let msg = `저장이 완료되었습니다. (저장된 건수: ${result.insertedCount})`;
                 if (result.missingNames?.length > 0) msg += `\n\n[주의] 매칭 실패: ${result.missingNames.join(', ')}`;
-                alert(msg);
+                await showAlert(msg, { type: 'success' });
                 setReport(null);
                 setActiveTab('manage');
             } else {
                 throw new Error(result.error || '저장 중 오류가 발생했습니다.');
             }
         } catch (error) {
+            setIsProcessing(false); // [Fix] Hide loading on error too
             console.error(error);
-            alert(`저장 실패: ${error}`);
+            await showAlert(`저장 실패: ${error}`, { type: 'error' });
         } finally {
             setIsProcessing(false);
         }

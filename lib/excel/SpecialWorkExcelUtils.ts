@@ -50,6 +50,10 @@ export const SpecialWorkExcelUtils = {
      * Export Attendance Detail View (Vertical A4)
      * Formerly exportToExcel
      */
+    exportToExcel: (logs: ExportLog[], targets: Record<string, number> = {}, filename?: string, reportTitle?: string) => {
+        return SpecialWorkExcelUtils.exportAttendance(logs, targets, filename, reportTitle);
+    },
+
     exportAttendance: async (logs: ExportLog[], targets: Record<string, number> = {}, filename = 'special_work_attendance.xlsx', reportTitle = '특근/근태 상세 내역') => {
         const workbook = new ExcelJS.Workbook();
         const sheet = workbook.addWorksheet('근태 상세');

@@ -16,8 +16,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
         // 1. Delete existing set with same effective_date (if exists)
         const existingSet = await db.prepare(
-            "SELECT id FROM hourly_wage_sets WHERE effective_date = ?"
-        ).bind(effectiveDate).first();
+            "SELECT id FROM hourly_wage_sets WHERE effective_date = ? AND company_id = ?"
+        ).bind(effectiveDate, companyId).first();
 
         if (existingSet) {
             // Delete existing wage values and set

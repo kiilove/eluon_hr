@@ -45,6 +45,13 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
             ORDER BY effective_date DESC, created_at DESC
         `).bind(id).all();
 
+        // 6. Discretionary History
+        const { results: discretionaryHistory } = await context.env.DB.prepare(`
+            SELECT * FROM employee_discretionary_history
+            WHERE employee_id = ?
+            ORDER BY start_date DESC, created_at DESC
+        `).bind(id).all();
+
         return new Response(JSON.stringify({
             success: true,
             data: {
@@ -52,7 +59,8 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
                 memos: memos || [],
                 wages: wages || [],
                 status_history: statusHistory || [],
-                position_history: positionHistory || []
+                position_history: positionHistory || [],
+                discretionary_history: discretionaryHistory || []
             }
         }), { headers: { "Content-Type": "application/json" } });
 

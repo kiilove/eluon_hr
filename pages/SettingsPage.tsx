@@ -5,10 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../co
 import { Input } from "../components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Clock, Shield, AlertTriangle, Plus, Trash2, Calendar, Briefcase, Coins, LayoutList } from "lucide-react";
+import { Clock, Shield, AlertTriangle, Plus, Trash2, Calendar, Briefcase, Coins, LayoutList, RefreshCw } from "lucide-react";
+
+
 import { cn } from "@/lib/utils";
 
 import { useData } from "../contexts/DataContext";
+import { useMessageModal } from "@/contexts/MessageModalContext";
+import { HolidayUtils } from "@/lib/holidayUtils";
 
 // --- Types ---
 interface WorkPolicy {
@@ -106,8 +110,13 @@ const TimeInput = ({ value, onChange, label }: { value: string; onChange: (val: 
 
 export const SettingsPage = () => {
     const { refreshPolicies } = useData();
+    const { showAlert, showConfirm } = useMessageModal();
     // Top Level Tabs
-    const [activeTab, setActiveTab] = useState<'attendance' | 'allowance' | 'wage'>('attendance');
+    const [activeTab, setActiveTab] = useState<'attendance' | 'allowance' | 'wage' | 'holidays'>('attendance');
+
+    // --- Tab 4: Holiday State ---
+    const [holidays, setHolidays] = useState<any[]>([]);
+    const [newHoliday, setNewHoliday] = useState({ date: "", name: "", is_recurring: false });
 
     // --- Tab 1: Attendance Policy State ---
     const [policies, setPolicies] = useState<WorkPolicy[]>([]);
@@ -145,40 +154,153 @@ export const SettingsPage = () => {
 
     // Initial Fetch
     useEffect(() => {
-        fetchPolicies();
-        fetchSpecialPolicySets();
-        fetchWagePolicies();
+        const loadAll = async () => {
+            setLoading(true);
+            await Promise.all([
+                fetchPolicies(),
+                fetchSpecialPolicySets(),
+                fetchWagePolicies(),
+                fetchHolidays()
+            ]);
+            setLoading(false);
+        };
+        loadAll();
     }, []);
 
-    // --- API Interactions: Attendance ---
-    const fetchPolicies = async () => {
+    // --- API Interactions: Holidays ---
+    // --- (Empty because I will add it to the top separately)
+
+    const fetchHolidays = async () => {
         try {
             const userStr = localStorage.getItem('user');
             if (userStr) {
                 const user = JSON.parse(userStr);
                 const companyId = user.company_id;
                 if (companyId) {
-                    const res = await fetch(`/api/policies?companyId=${companyId}`);
-                    const data = await res.json() as any;
-                    setPolicies(data);
+                    const year = new Date().getFullYear();
+
+                    // 1. Fetch Custom Holidays from DB
+                    const res = await fetch(`/api/management/holidays?companyId=${companyId}&year=${year}`);
+                    let dbHolidays: any[] = [];
+                    if (res.ok) {
+                        const data = await res.json() as any;
+                        if (data.success) dbHolidays = data.data;
+                    }
+
+                    // 2. Generate Standard Holidays from HolidayUtils
+                    const standardHolidays: any[] = [];
+
+                    // Add Solar Holidays
+                    Object.entries(HolidayUtils.SOLAR_HOLIDAYS).forEach(([mmdd, name]) => {
+                        standardHolidays.push({
+                            id: `std_${mmdd}`,
+                            date: `${year}-${mmdd}`,
+                            name: name,
+                            type: 'public', // Visual badge style
+                            is_standard: true // Flag to disable delete
+                        });
+                    });
+
+                    // Add Lunar/Variable Holidays for this year
+                    Object.entries(HolidayUtils.LUNAR_HOLIDAYS).forEach(([dateStr, name]) => {
+                        if (dateStr.startsWith(String(year))) {
+                            standardHolidays.push({
+                                id: `std_${dateStr}`,
+                                date: dateStr,
+                                name: name,
+                                type: 'public',
+                                is_standard: true
+                            });
+                        }
+                    });
+
+                    // 3. Merge and Sort
+                    // If DB has a holiday on the same date, normally DB takes precedence or we show both?
+                    // Let's show all, sorting by date.
+                    const allHolidays = [...standardHolidays, ...dbHolidays].sort((a, b) => a.date.localeCompare(b.date));
+
+                    setHolidays(allHolidays);
                 }
+            }
+        } catch (error) { console.error(error); }
+    };
+
+    const handleSaveHoliday = async () => {
+        if (!newHoliday.date || !newHoliday.name) {
+            await showAlert("날짜와 명칭을 입력하세요.", { type: 'warning' });
+            return;
+        }
+        try {
+            const userStr = localStorage.getItem('user');
+            const user = userStr ? JSON.parse(userStr) : {};
+            const companyId = user.company_id;
+
+            const res = await fetch('/api/management/holidays', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...newHoliday, companyId })
+            });
+
+            if (res.ok) {
+                await showAlert("추가되었습니다.", { type: 'success' });
+                setNewHoliday({ date: "", name: "", is_recurring: false });
+                fetchHolidays();
+            } else {
+                await showAlert("추가 실패", { type: 'error' });
+            }
+        } catch (e) {
+            await showAlert("오류 발생", { type: 'error' });
+        }
+    };
+
+    const handleDeleteHoliday = async (id: string) => {
+        const confirmed = await showConfirm("삭제하시겠습니까?", {
+            title: '삭제 확인',
+            type: 'warning',
+            confirmText: '삭제',
+            cancelText: '취소'
+        });
+        if (!confirmed) return;
+        try {
+            const res = await fetch(`/api/management/holidays?id=${id}`, { method: 'DELETE' });
+            if (res.ok) fetchHolidays();
+        } catch (e) { console.error(e); }
+    };
+
+    // --- API Interactions: Attendance ---
+    const fetchPolicies = async () => {
+        try {
+            const userStr = localStorage.getItem('user');
+            if (!userStr) return;
+            const user = JSON.parse(userStr);
+            const companyId = user.company_id;
+
+            if (companyId) {
+                const res = await fetch(`/api/policies?companyId=${companyId}`);
+                if (!res.ok) throw new Error("API response error");
+                const data = await res.json() as any;
+                setPolicies(Array.isArray(data) ? data : []);
             }
         } catch (error) {
             console.error("Failed to fetch policies:", error);
-        } finally {
-            setLoading(false);
         }
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm("정말 이 정책을 삭제하시겠습니까?")) return;
+        const confirmed = await showConfirm("정말 이 정책을 삭제하시겠습니까?", {
+            title: '삭제 확인',
+            type: 'warning',
+            confirmText: '삭제',
+            cancelText: '취소'
+        });
+        if (!confirmed) return;
         try {
             const res = await fetch(`/api/policies?id=${id}`, { method: 'DELETE' });
             if (res.ok) {
                 fetchPolicies();
                 refreshPolicies();
             }
-            else alert("삭제 실패");
+            else await showAlert("삭제 실패", { type: 'error' });
         } catch (error) {
             console.error(error);
         }
@@ -213,16 +335,16 @@ export const SettingsPage = () => {
             });
 
             if (res.ok) {
-                alert(isUpdate ? "수정되었습니다." : "생성되었습니다.");
+                await showAlert(isUpdate ? "수정되었습니다." : "생성되었습니다.", { type: 'success' });
                 setIsCreating(false);
                 fetchPolicies();
                 refreshPolicies();
             } else {
                 const err = await res.json() as any;
-                alert("저장 실패: " + err.error);
+                await showAlert("저장 실패: " + err.error, { type: 'error' });
             }
         } catch (error) {
-            alert("저장 중 오류가 발생했습니다.");
+            await showAlert("저장 중 오류가 발생했습니다.", { type: 'error' });
         }
     };
 
@@ -286,41 +408,30 @@ export const SettingsPage = () => {
                 })
             });
             if (res.ok) {
-                alert("저장되었습니다.");
+                await showAlert("저장되었습니다.", { type: 'success' });
                 setIsCreating(false); // Close form
                 fetchSpecialPolicySets();
             } else {
-                alert("저장 실패");
+                await showAlert("저장 실패", { type: 'error' });
             }
         } catch (e) {
-            alert("오류 발생");
+            await showAlert("오류 발생", { type: 'error' });
         }
     };
 
     const handleDeleteSet = async (setId: string) => {
-        // NOTE: Currently backend DELETE for set is not implemented in previous steps. 
-        // We will add a quick implementation or just mock it, but user asked for UI Redesign. 
-        // I should probably support it if I added the button.
-        // Let's rely on the POST (Upsert) for now, but to really DELETE a set we need an endpoint.
-        // For this step I will leave it as alert since backend wasn't requested to change.
-        // Wait, I should do it right. Let's add DELETE support to the API too?
-        // Actually, the user's prompt was UI redesign. I'll just alert for now or try to call delete.
-        // Let's implement DELETE in the API in the next step if needed. 
-        // For now, I will use a placeholder or check if I can add it.
-        // Actually, I can allow "Editing" old sets by selecting them (which I did in the list click handler).
-        // But true DELETE needs API. I will add the function signature but maybe not fetch yet if API missing.
-        // Oh, I see I used 'handleDeleteSet' in the code. I should implement it.
-
-        // Let's assuming I'll update the API or just hide the button if not supported. 
-        // But better to support it. I'll add the API change call next.
-        // Here is the frontend function:
-
-        if (!confirm("이 정책을 삭제하시겠습니까? (복구 불가)")) return;
+        const confirmed = await showConfirm("이 정책을 삭제하시겠습니까? (복구 불가)", {
+            title: '삭제 확인',
+            type: 'warning',
+            confirmText: '삭제',
+            cancelText: '취소'
+        });
+        if (!confirmed) return;
 
         try {
             const res = await fetch(`/api/settings/special-work?id=${setId}`, { method: 'DELETE' });
             if (res.ok) fetchSpecialPolicySets();
-            else alert("삭제 실패 (지원되지 않는 기능이거나 오류)");
+            else await showAlert("삭제 실패 (지원되지 않는 기능이거나 오류)", { type: 'error' });
         } catch (e) { console.error(e); }
     };
 
@@ -391,21 +502,27 @@ export const SettingsPage = () => {
             });
 
             if (res.ok) {
-                alert("저장되었습니다.");
+                await showAlert("저장되었습니다.", { type: 'success' });
                 setIsCreating(false); // Close form
                 fetchWagePolicies();
             } else {
-                alert("저장 실패");
+                await showAlert("저장 실패", { type: 'error' });
             }
-        } catch (e) { alert("오류 발생"); }
+        } catch (e) { await showAlert("오류 발생", { type: 'error' }); }
     };
 
     const handleDeleteWagePolicy = async (id: string) => {
-        if (!confirm("정말 삭제하시겠습니까?")) return;
+        const confirmed = await showConfirm("정말 삭제하시겠습니까?", {
+            title: '삭제 확인',
+            type: 'warning',
+            confirmText: '삭제',
+            cancelText: '취소'
+        });
+        if (!confirmed) return;
         try {
             const res = await fetch(`/api/settings/wage-policies?id=${id}`, { method: 'DELETE' });
             if (res.ok) fetchWagePolicies();
-            else alert("삭제 실패");
+            else await showAlert("삭제 실패", { type: 'error' });
         } catch (e) { console.error(e); }
     };
 
@@ -452,6 +569,17 @@ export const SettingsPage = () => {
                 >
                     <LayoutList className="w-4 h-4" />
                     시급/배율 설정
+                </button>
+                <button
+                    onClick={() => { setActiveTab('holidays'); setIsCreating(false); }}
+                    className={cn("px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2",
+                        activeTab === 'holidays'
+                            ? "border-indigo-600 text-indigo-600"
+                            : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+                    )}
+                >
+                    <Calendar className="w-4 h-4" />
+                    공휴일 관리
                 </button>
             </div>
 
@@ -724,11 +852,8 @@ export const SettingsPage = () => {
                                         <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity" onClick={(e) => {
                                             e.stopPropagation();
                                             // TODO: Add delete functionality for sets if needed
-                                            if (confirm("정말 삭제하시겠습니까?")) {
-                                                // Call delete API (Need implementation if not exists, but for now UI only)
-                                                // For now just alert or implement simple delete
-                                                handleDeleteSet(set.id);
-                                            }
+                                            // Call delete API (Need implementation if not exists, but for now UI only)
+                                            handleDeleteSet(set.id);
                                         }}>
                                             <Trash2 className="w-4 h-4" />
                                         </Button>
@@ -918,7 +1043,118 @@ export const SettingsPage = () => {
                         </div>
                     </div>
                 )}
+
+                {/* --- TAB 4: Holiday Config --- */}
+                {activeTab === 'holidays' && (
+                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                        <div className="flex justify-between items-center">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800">공휴일 관리</h3>
+                                <p className="text-sm text-slate-500">법정 공휴일 및 회사 창립기념일 등 휴일 일정을 관리합니다.</p>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {/* Form */}
+                            <Card className="md:col-span-1 shadow-sm h-fit border-indigo-100">
+                                <CardHeader className="pb-3 bg-indigo-50/50 border-b border-indigo-50">
+                                    <CardTitle className="text-sm font-bold text-indigo-900 flex items-center gap-2">
+                                        <Plus className="w-4 h-4" /> 새 휴일 추가
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4 pt-4">
+                                    <div className="space-y-2">
+                                        <Label>날짜</Label>
+                                        <div className="relative">
+                                            <Calendar className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                                            <Input
+                                                type="date"
+                                                value={newHoliday.date}
+                                                onChange={e => setNewHoliday({ ...newHoliday, date: e.target.value })}
+                                                className="pl-9 bg-white"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>휴일 명칭</Label>
+                                        <Input value={newHoliday.name} onChange={e => setNewHoliday({ ...newHoliday, name: e.target.value })} placeholder="예: 창립기념일" />
+                                    </div>
+                                    <div className="flex items-center space-x-2 pt-2 bg-slate-50 p-2 rounded-md">
+                                        <input
+                                            type="checkbox"
+                                            id="recurring"
+                                            checked={newHoliday.is_recurring}
+                                            onChange={(e) => setNewHoliday({ ...newHoliday, is_recurring: e.target.checked })}
+                                            className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                                        />
+                                        <Label htmlFor="recurring" className="font-medium text-slate-700 text-sm cursor-pointer">매년 반복 (양력 기준)</Label>
+                                    </div>
+                                    <Button onClick={handleSaveHoliday} className="w-full bg-indigo-600 hover:bg-indigo-700 mt-2 shadow-md shadow-indigo-100">추가하기</Button>
+                                </CardContent>
+                            </Card>
+
+                            {/* List */}
+                            <Card className="md:col-span-2 shadow-sm border-slate-200">
+                                <CardHeader className="pb-3 border-b border-slate-50 bg-slate-50/30">
+                                    <div className="flex justify-between items-center">
+                                        <CardTitle className="text-sm font-bold flex items-center gap-2">
+                                            <Calendar className="w-4 h-4 text-slate-500" />
+                                            등록된 휴일 목록 <span className="text-slate-400 font-normal">({new Date().getFullYear()}년)</span>
+                                        </CardTitle>
+                                        <Button variant="ghost" size="sm" onClick={fetchHolidays} className="h-7 text-xs">
+                                            <RefreshCw className="w-3.5 h-3.5 mr-1" /> 새로고침
+                                        </Button>
+                                    </div>
+                                </CardHeader>
+                                <CardContent className="p-0">
+                                    <div className="max-h-[500px] overflow-y-auto">
+                                        <table className="w-full text-sm text-left">
+                                            <thead className="bg-slate-50 text-slate-500 font-medium sticky top-0 z-10 shadow-sm">
+                                                <tr>
+                                                    <th className="px-4 py-3 w-32">날짜</th>
+                                                    <th className="px-4 py-3">명칭</th>
+                                                    <th className="px-4 py-3 text-center w-24">유형</th>
+                                                    <th className="px-4 py-3 text-right w-20">관리</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 bg-white">
+                                                {holidays.length === 0 ? (
+                                                    <tr><td colSpan={4} className="p-8 text-center text-slate-400 flex flex-col items-center gap-2">
+                                                        <Calendar className="w-8 h-8 opacity-20" />
+                                                        <span>등록된 휴일이 없습니다.</span>
+                                                    </td></tr>
+                                                ) : (
+                                                    holidays.map(h => (
+                                                        <tr key={h.id} className="hover:bg-slate-50/50 group transition-colors">
+                                                            <td className="px-4 py-3 font-mono text-slate-600 font-medium">
+                                                                {h.date}
+                                                                {h.is_recurring && <span className="ml-2 text-[10px] text-slate-400 bg-slate-100 px-1 rounded border">매년</span>}
+                                                            </td>
+                                                            <td className="px-4 py-3 font-medium text-slate-800">{h.name}</td>
+                                                            <td className="px-4 py-3 text-center">
+                                                                <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-bold",
+                                                                    h.type === 'public' ? "bg-red-50 text-red-600" : "bg-blue-50 text-blue-600"
+                                                                )}>
+                                                                    {h.type === 'public' ? '공휴일' : '회사휴일'}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-4 py-3 text-right">
+                                                                <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100" onClick={() => handleDeleteHoliday(h.id)}>
+                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                </Button>
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    </div>
+                )}
             </div>
-        </div>
+        </div >
     );
 };

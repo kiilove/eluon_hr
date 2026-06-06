@@ -1,5 +1,6 @@
 name = "auditready-hr"
 compatibility_date = "2024-03-20"
+compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "dist"
 
 [[d1_databases]]

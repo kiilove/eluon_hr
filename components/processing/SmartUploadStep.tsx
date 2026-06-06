@@ -2,17 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { RefreshCw, Upload, Trash2, Calendar as CalendarIcon, AlertTriangle, CheckCircle2, ChevronRight, ChevronLeft } from "lucide-react";
+import { RefreshCw, Upload, Trash2, Calendar as CalendarIcon, AlertTriangle, CheckCircle2, ChevronRight, ChevronLeft, Pencil } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { startOfMonth, endOfMonth, eachWeekOfInterval, startOfWeek, endOfWeek, format, isSameMonth, addMonths, getISOWeek } from 'date-fns';
 import { TimeUtils } from '@/lib/timeUtils';
+import { useMessageModal } from '@/contexts/MessageModalContext';
 
 interface SmartUploadStepProps {
     isProcessing: boolean;
     onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    onEdit?: (start: Date, end: Date) => void;
 }
 
-export const SmartUploadStep: React.FC<SmartUploadStepProps> = ({ isProcessing, onUpload }) => {
+export const SmartUploadStep: React.FC<SmartUploadStepProps> = ({ isProcessing, onUpload, onEdit }) => {
+    const { showAlert, showConfirm } = useMessageModal();
     // [UX] Default to Previous Month (Per User Request)
     const [targetMonth, setTargetMonth] = useState<string>(() => {
         const d = new Date();
@@ -23,6 +26,7 @@ export const SmartUploadStep: React.FC<SmartUploadStepProps> = ({ isProcessing, 
     const [stats, setStats] = useState<Record<string, number>>({});
     const [isLoadingStats, setIsLoadingStats] = useState(false);
     const [deletedWeeks, setDeletedWeeks] = useState<Set<number>>(new Set());
+    const [calibrationDetails, setCalibrationDetails] = useState<any[] | null>(null);
 
     // [User Context] Retrieve for Company Isolation
     const [user, setUser] = useState<{ company_id: string } | null>(null);
@@ -75,7 +79,7 @@ export const SmartUploadStep: React.FC<SmartUploadStepProps> = ({ isProcessing, 
             }
         } catch (e: any) {
             console.error("Failed to fetch stats", e);
-            alert(`데이터 조회 실패: ${e.message}`);
+            await showAlert(`데이터 조회 실패: ${e.message}`, { type: 'error' });
         } finally {
             setIsLoadingStats(false);
         }
@@ -98,16 +102,20 @@ export const SmartUploadStep: React.FC<SmartUploadStepProps> = ({ isProcessing, 
     // Handle Delete Range
     const handleDeleteRange = async (start: Date, end: Date, weekIdx?: number) => {
         if (!user?.company_id) {
-            alert("사용자 정보를 찾을 수 없습니다.");
+            await showAlert("사용자 정보를 찾을 수 없습니다.", { type: 'error' });
             return;
         }
 
         const startStr = format(start, 'yyyy-MM-dd');
         const endStr = format(end, 'yyyy-MM-dd');
 
-        if (!confirm(`${startStr} ~ ${endStr} 기간의 모든 근태 데이터를 삭제하시겠습니까?\n(이 작업은 되돌릴 수 없습니다)`)) {
-            return;
-        }
+        const confirmed = await showConfirm(`${startStr} ~ ${endStr} 기간의 모든 근태 데이터를 삭제하시겠습니까?\n(이 작업은 되돌릴 수 없습니다)`, {
+            title: '데이터 삭제 확인',
+            type: 'warning',
+            confirmText: '삭제'
+        });
+
+        if (!confirmed) return;
 
         try {
             // Use logs API (GET with mode=delete to avoid Method issues without restart)
@@ -116,17 +124,68 @@ export const SmartUploadStep: React.FC<SmartUploadStepProps> = ({ isProcessing, 
             });
             const result = await res.json() as any;
             if (res.ok && result.success) {
-                alert(`${result.deletedCount}건의 데이터가 삭제되었습니다.`);
+                await showAlert(`${result.deletedCount}건의 데이터가 삭제되었습니다.`, { type: 'success' });
                 fetchStats(); // Refresh
                 if (weekIdx !== undefined) {
                     setDeletedWeeks(prev => new Set(prev).add(weekIdx));
                 }
             } else {
-                alert("삭제 실패: " + result.message || result.error);
+                await showAlert("삭제 실패: " + (result.message || result.error), { type: 'error' });
             }
         } catch (e: any) {
             console.error("Delete Error", e);
-            alert("오류 발생: " + e.message);
+            await showAlert("오류 발생: " + e.message, { type: 'error' });
+        }
+    };
+
+    const handleCalibrateDiscretionary = async (start: Date, end: Date) => {
+        if (!user?.company_id) {
+            await showAlert("사용자 정보를 찾을 수 없습니다.", { type: 'error' });
+            return;
+        }
+
+        const startStr = format(start, 'yyyy-MM-dd');
+        const endStr = format(end, 'yyyy-MM-dd');
+
+        const confirmed = await showConfirm(
+            `${startStr} ~ ${endStr} 기간 동안 등록된 근태 데이터에 대해 재량근무 정책을 기반으로 자동 보정을 진행하시겠습니까?`,
+            {
+                title: '재량근무 보정 실행',
+                type: 'info',
+                confirmText: '보정 실행'
+            }
+        );
+
+        if (!confirmed) return;
+
+        setIsLoadingStats(true);
+        try {
+            const res = await fetch('/api/attendance/calibrate-discretionary', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    startDate: startStr,
+                    endDate: endStr,
+                    companyId: user.company_id
+                })
+            });
+            const result = await res.json() as any;
+
+            if (res.ok && result.success) {
+                if (result.details && result.details.length > 0) {
+                    setCalibrationDetails(result.details);
+                } else {
+                    await showAlert(`보정 대상 재량근무 데이터가 존재하지 않습니다. (0건 보정됨)`, { type: 'info' });
+                }
+                fetchStats();
+            } else {
+                await showAlert("보정 실패: " + (result.message || result.error), { type: 'error' });
+            }
+        } catch (e: any) {
+            console.error("Calibration Error", e);
+            await showAlert("오류 발생: " + e.message, { type: 'error' });
+        } finally {
+            setIsLoadingStats(false);
         }
     };
 
@@ -224,14 +283,33 @@ export const SmartUploadStep: React.FC<SmartUploadStepProps> = ({ isProcessing, 
                                             </div>
                                         </div>
                                         {hasData && (
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="h-8 text-xs border-red-200 text-red-600 hover:bg-red-50"
-                                                onClick={() => handleDeleteRange(weekStart, weekEnd, idx)}
-                                            >
-                                                삭제
-                                            </Button>
+                                            <div className="flex items-center gap-1">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-8 text-xs border-amber-200 text-amber-600 hover:bg-amber-50"
+                                                    onClick={() => handleCalibrateDiscretionary(weekStart, weekEnd)}
+                                                >
+                                                    재량근무 보정
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-8 text-xs border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+                                                    onClick={() => onEdit && onEdit(weekStart, weekEnd)}
+                                                >
+                                                    <Pencil className="w-3 h-3 mr-1" />
+                                                    수정
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-8 text-xs border-red-200 text-red-600 hover:bg-red-50"
+                                                    onClick={() => handleDeleteRange(weekStart, weekEnd, idx)}
+                                                >
+                                                    삭제
+                                                </Button>
+                                            </div>
                                         )}
                                     </div>
                                 );
@@ -291,6 +369,39 @@ export const SmartUploadStep: React.FC<SmartUploadStepProps> = ({ isProcessing, 
                     )}
                 </CardContent>
             </Card>
+
+            {calibrationDetails && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-xl w-full border border-slate-200 overflow-hidden animate-in fade-in-50 zoom-in-95 duration-200">
+                        <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                <span className="flex h-2 w-2 rounded-full bg-amber-500" />
+                                재량근무 보정 상세 내역
+                            </h3>
+                            <p className="text-xs text-slate-500 mt-1">
+                                총 {calibrationDetails.length}건의 재량근무 대상자 근태 데이터가 아래와 같이 보정되었습니다.
+                            </p>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <textarea
+                                className="w-full h-64 p-3 font-mono text-xs border border-slate-200 rounded-lg bg-slate-50 text-slate-700 resize-none focus:outline-none"
+                                readOnly
+                                value={calibrationDetails.map(d => 
+                                    `[${d.date}] ${d.employeeName}\n  변경 전: ${d.originalStartTime || '기록없음'} ~ ${d.originalEndTime || '기록없음'}\n  변경 후: ${d.newStartTime} ~ ${d.newEndTime} (재량근무 정규화)`
+                                ).join('\n\n')}
+                            />
+                        </div>
+                        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+                            <Button 
+                                className="bg-slate-800 hover:bg-slate-700 text-white text-xs px-4 h-9"
+                                onClick={() => setCalibrationDetails(null)}
+                            >
+                                확인 및 닫기
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

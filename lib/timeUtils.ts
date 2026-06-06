@@ -55,8 +55,37 @@ export const TimeUtils = {
     },
 
     // Get Week Key (WXX)
+    toDateString: (date: Date): string => {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    },
+
+    getMondayOfDate: (dateInput: Date | string): Date => {
+        const date = new Date(typeof dateInput === 'string' ? dateInput : dateInput.getTime());
+        // Handle potential JS Date timezone jitter by stripping time
+        date.setHours(12, 0, 0, 0);
+        const day = date.getDay();
+        const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(date.setDate(diff));
+        monday.setHours(0, 0, 0, 0);
+        return monday;
+    },
+
+    getSundayOfDate: (dateInput: Date | string): Date => {
+        const date = new Date(typeof dateInput === 'string' ? dateInput : dateInput.getTime());
+        date.setHours(12, 0, 0, 0);
+        const day = date.getDay();
+        const diff = day === 0 ? 0 : (7 - day);
+        const sunday = new Date(date.setDate(date.getDate() + diff));
+        sunday.setHours(23, 59, 59, 999);
+        return sunday;
+    },
+
     getWeekKey: (dateInput: Date | string): string => {
-        const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+        const date = new Date(typeof dateInput === 'string' ? dateInput : dateInput.getTime());
+        date.setHours(12, 0, 0, 0);
         const year = date.getFullYear();
         const jan1 = new Date(year, 0, 1);
         const jan1Day = jan1.getDay();

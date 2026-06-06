@@ -1,4 +1,4 @@
-import { SpecialWorkAttendanceGenerator } from '../../engine/specialWorkAttendanceGenerator';
+import { SpecialWorkAttendanceGenerator } from '../../_engine/specialWorkAttendanceGenerator';
 import { SpecialWorkCalculator } from '../../../lib/specialWorkCalculator';
 
 import { TimeUtils } from '../../../lib/timeUtils';
@@ -75,18 +75,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
                     }
                 }
 
-                if (!record.calculated_hours || record.calculated_hours <= 0) {
-                    console.log('[Generate] Skipped (no hours):', record.employee_name, 'hours:', record.calculated_hours);
-                    skippedCount++;
-                    continue;
-                }
+                // [Fix] Consistent Floor Logic for Recognized Hours
+                // We recalculate from total_amount to handle legacy records correctly
+                const targetHours = record.special_hourly_wage > 0
+                    ? Math.floor(record.total_amount / record.special_hourly_wage)
+                    : record.calculated_hours;
 
-                // [Fix] Round target hours to nearest integer to reflect "Recognized Hours" logic
-                // using Unified Calculator
-                // calculated_hours is in hours, so * 60 to get minutes
-                const roundedTarget = SpecialWorkCalculator.toRecognizedHours(record.calculated_hours * 60);
+                const roundedTarget = SpecialWorkCalculator.toRecognizedHours(targetHours * 60);
                 if (roundedTarget === 0) {
-                    console.log('[Generate] Skipped (rounded to 0):', record.employee_name, 'original:', record.calculated_hours);
+                    console.log('[Generate] Skipped (rounded to 0):', record.employee_name, 'original:', targetHours);
                     skippedCount++;
                     continue;
                 }
@@ -99,8 +96,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
                     totalHours: roundedTarget,
                     employeeName: record.employee_name,
                     maxWeeklyOvertime: maxOvertime,
-                    breakTime4h: break4h,
-                    breakTime8h: break8h
+                    breakTime4h: 0, // [Requirement] No break deduction for Special Work
+                    breakTime8h: 0
                 });
 
                 // Map to flat list with user info
@@ -149,6 +146,35 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             `).bind(mStart, mEnd, companyId).run();
 
             const stmts = [];
+            // Group logs by employee to calculate total generated hours for validation
+            const logsByEmployee = generatedLogs.reduce((acc, log) => {
+                (acc[log.employeeId] = acc[log.employeeId] || []).push(log);
+                return acc;
+            }, {});
+
+            for (const empId in logsByEmployee) {
+                const groupLogs = logsByEmployee[empId];
+                let totalRecognizedMin = 0;
+                groupLogs.forEach((l: any) => {
+                    const [sh, sm] = l.startTime.split(':').map(Number);
+                    const [eh, em] = l.endTime.split(':').map(Number);
+                    const startMin = sh * 60 + sm;
+                    const endMin = eh * 60 + em;
+                    const duration = endMin - startMin;
+                    const actual = Math.max(0, duration - l.breakMinutes);
+                    // [Rule] Work Hours (Attendance) use Rounding
+                    const workMin = SpecialWorkCalculator.toWorkHours(actual) * 60;
+                    totalRecognizedMin += workMin;
+                });
+                const generatedHours = Math.round(totalRecognizedMin / 60);
+                const targetHours = targets[empId] || 0;
+                const errorDiff = Math.abs(generatedHours - targetHours);
+
+                if (errorDiff > 0) {
+                    console.warn(`[Generate] Employee ${empId} (${groupLogs[0].employeeName}): Target hours (from pay): ${targetHours}, Generated hours (rounded): ${generatedHours}. Difference: ${errorDiff}`);
+                }
+            }
+
             for (const log of generatedLogs) {
                 // Calculate Minutes
                 const [sh, sm] = log.startTime.split(':').map(Number);

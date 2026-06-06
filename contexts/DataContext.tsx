@@ -3,6 +3,7 @@ import { RawCommuteLog, ProcessedWorkLog, WeeklySummary, WorkType, LogStatus, Gl
 import { WorkHourCalculator } from '../lib/workHourCalculator';
 import { TimeUtils } from '../lib/timeUtils';
 import { PolicyUtils } from '../lib/policyUtils';
+import { HolidayUtils } from "@/lib/holidayUtils";
 
 type ViewMode = 'ORIGINAL' | 'CALIBRATED';
 
@@ -61,15 +62,26 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     // Refresh Policies Helper
     const refreshPolicies = async () => {
         try {
+            const userStr = localStorage.getItem('user');
+            const companyId = userStr ? JSON.parse(userStr).company_id : null;
+
+            if (!companyId) return;
+
+            // Load Policies & Settings
             const [pRes, aRes, wRes] = await Promise.all([
-                fetch('/api/policies'),
-                fetch('/api/settings/special-work'),
-                fetch('/api/settings/wage-policies')
+                fetch(`/api/policies?companyId=${companyId}`),
+                fetch(`/api/settings/special-work?companyId=${companyId}`),
+                fetch(`/api/settings/wage-policies?companyId=${companyId}`)
             ]);
 
             if (pRes.ok) setPolicies(await pRes.json());
             if (aRes.ok) setAllowancePolicies(await aRes.json());
             if (wRes.ok) setWagePolicies(await wRes.json());
+
+            // Initialize Holidays (Current Year)
+            const year = new Date().getFullYear();
+            await HolidayUtils.init(year, companyId);
+
         } catch (e) {
             console.warn("Failed to fetch policies in DataContext", e);
         }

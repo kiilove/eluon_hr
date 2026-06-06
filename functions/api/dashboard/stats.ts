@@ -28,8 +28,9 @@ export const onRequestGet = async (context: any) => {
 
         // Fetch Raw Data
         // 1. Work Logs
+        // [Modified] Added start_time, end_time for anomaly detection
         const { results: workLogs } = await env.DB.prepare(`
-            SELECT work_date, employee_id, actual_work_minutes, overtime_minutes 
+            SELECT work_date, employee_id, actual_work_minutes, overtime_minutes, start_time, end_time
             FROM work_logs 
             WHERE work_date >= ? AND work_date < ?
             AND employee_id IN (SELECT id FROM regular_employees WHERE company_id = ?)
@@ -50,9 +51,15 @@ export const onRequestGet = async (context: any) => {
         const userMap = new Map(employees.map((e: any) => [e.id, e]));
 
         // JS Aggregation
-        const userStats = new Map<number, { regHrs: number, specHrs: number }>();
+        const userStats = new Map<number, { regHrs: number, specHrs: number, dept: string }>();
         const weeklyStats = new Map<string, { regHrs: number, specHrs: number }>();
-        // Monthly stats are not needed here as monthly trend is handled by SQL
+
+        // [New] Weekly Hours per Employee (for compliance risk)
+        const employeeWeeklyHours = new Map<string, number>(); // key: "empId-week"
+
+        // Anomalies
+        const anomalies: string[] = [];
+        let anomalyCount = 0;
 
         // Helper to add (Per-Log Rounding Logic)
         const add = (store: Map<any, any>, key: any, reg: number, spec: number) => {
@@ -70,56 +77,100 @@ export const onRequestGet = async (context: any) => {
             const reg = Math.max(0, actual - over);
             const spec = over;
 
-            add(userStats, log.employee_id, reg, spec);
-            // Week key (00-53)
-            // Note: strftime('%W') is roughly 1st week of year. 
-            // We need a JS equivalent or just trust date.
-            // Simple JS week:
-            const d = new Date(log.work_date);
-            const oneJan = new Date(d.getFullYear(), 0, 1);
-            const numberOfDays = Math.floor((d.getTime() - oneJan.getTime()) / (24 * 60 * 60 * 1000));
-            const week = Math.ceil((d.getDay() + 1 + numberOfDays) / 7); // Rough week num
-            const weekKey = String(week).padStart(2, '0'); // Matches %W format vaguely
-            // Better: use the same Logic as API or just week number
-            add(weeklyStats, weekKey, reg, spec);
-        }
+            const u = userMap.get(log.employee_id) as any;
+            const dept = u ? u.department || '미지정' : '미지정';
 
-        // Process Special Logs
-        for (const log of (specialLogs || [])) {
-            const actual = log.actual_work_minutes || 0;
-            const reg = 0;
-            const spec = actual;
+            // User stats with department
+            const uStat = userStats.get(log.employee_id) || { regHrs: 0, specHrs: 0, dept };
+            uStat.regHrs += Math.round(reg / 60);
+            uStat.specHrs += Math.round(spec / 60);
+            userStats.set(log.employee_id, uStat);
 
-            add(userStats, log.employee_id, reg, spec);
+            // [New] Anomaly Detection
+            if (log.start_time && !log.end_time) {
+                const name = u ? u.name : 'Unknown';
+                if (anomalies.length < 5) anomalies.push(`${name} (${log.work_date})`);
+                anomalyCount++;
+            }
 
+            // Week Calculation
             const d = new Date(log.work_date);
             const oneJan = new Date(d.getFullYear(), 0, 1);
             const numberOfDays = Math.floor((d.getTime() - oneJan.getTime()) / (24 * 60 * 60 * 1000));
             const week = Math.ceil((d.getDay() + 1 + numberOfDays) / 7);
             const weekKey = String(week).padStart(2, '0');
             add(weeklyStats, weekKey, reg, spec);
+
+            // [New] Employee Weekly Total
+            const empWeekKey = `${log.employee_id}-${weekKey}`;
+            const currentWeekly = employeeWeeklyHours.get(empWeekKey) || 0;
+            employeeWeeklyHours.set(empWeekKey, currentWeekly + (actual / 60)); // Sum hours
+        }
+
+        // Process Special Logs
+        for (const log of (specialLogs || [])) {
+            const actual = log.actual_work_minutes || 0;
+            const u = userMap.get(log.employee_id) as any;
+            const dept = u ? u.department || '미지정' : '미지정';
+
+            const uStat = userStats.get(log.employee_id) || { regHrs: 0, specHrs: 0, dept };
+            uStat.specHrs += Math.round(actual / 60);
+            userStats.set(log.employee_id, uStat);
+
+            const d = new Date(log.work_date);
+            const oneJan = new Date(d.getFullYear(), 0, 1);
+            const numberOfDays = Math.floor((d.getTime() - oneJan.getTime()) / (24 * 60 * 60 * 1000));
+            const week = Math.ceil((d.getDay() + 1 + numberOfDays) / 7);
+            const weekKey = String(week).padStart(2, '0');
+            add(weeklyStats, weekKey, 0, actual);
+
+            // [New] Employee Weekly Total (Special work counts toward 52h)
+            const empWeekKey = `${log.employee_id}-${weekKey}`;
+            const currentWeekly = employeeWeeklyHours.get(empWeekKey) || 0;
+            employeeWeeklyHours.set(empWeekKey, currentWeekly + (actual / 60));
         }
 
         // --- Summarize ---
         let totalRegularHrs = 0;
         let totalSpecialHrs = 0;
         const topUserList: any[] = [];
+        const deptOvertimeMap = new Map<string, number>();
+
+        // 1. Compliance Risk Assessment
+        const riskEmployees = new Set<number>();
+        const warningEmployees = new Set<number>();
+        for (const [key, hours] of employeeWeeklyHours.entries()) {
+            const empId = parseInt(key.split('-')[0]);
+            if (hours >= 52) riskEmployees.add(empId);
+            else if (hours >= 48) warningEmployees.add(empId);
+        }
 
         for (const [uid, stat] of userStats.entries()) {
             const u = userMap.get(uid) as any;
-
             totalRegularHrs += stat.regHrs;
             totalSpecialHrs += stat.specHrs;
+
+            // Department Overtime
+            const currentDeptOt = deptOvertimeMap.get(stat.dept) || 0;
+            deptOvertimeMap.set(stat.dept, currentDeptOt + (stat.specHrs * 60));
 
             if (u) {
                 topUserList.push({
                     user_name: u.name,
                     user_title: u.position,
                     department: u.department,
-                    totalOvertime: stat.specHrs * 60 // Convert to min for frontend
+                    totalOvertime: stat.specHrs * 60
                 });
             }
         }
+
+        // Department Breakdown (Sort by OT)
+        const totalOtTime = totalSpecialHrs * 60;
+        const departmentOvertime = Array.from(deptOvertimeMap.entries()).map(([department, ot]) => ({
+            department,
+            totalOvertimeMinutes: ot,
+            percentage: totalOtTime > 0 ? Math.round((ot / totalOtTime) * 100) : 0
+        })).sort((a, b) => b.totalOvertimeMinutes - a.totalOvertimeMinutes).slice(0, 5);
 
         // Sort Top 5
         topUserList.sort((a, b) => b.totalOvertime - a.totalOvertime);
@@ -133,10 +184,6 @@ export const onRequestGet = async (context: any) => {
         })).sort((a, b) => Number(a.week) - Number(b.week));
 
         // Monthly Trend (Year Request)
-        // Need to fetch full year data?
-        // The previous monthly logic fetched data for yearStartStr to yearEndStr.
-        // I need to do the same here.
-        // For efficiency, I might use SQL for Monthly Trend since it's year-wide and user-rounding matters less for a generic trend bar.
         // Retaining the SQL for Monthly Trend to avoid fetching 365 days of logs to JS.
         const yearStartStr = `${tYear}-01-01`;
         const yearEndStr = `${tYear + 1}-01-01`;
@@ -151,7 +198,7 @@ export const onRequestGet = async (context: any) => {
             WHERE work_date >= ? AND work_date < ?
             AND employee_id IN (SELECT id FROM regular_employees WHERE company_id = ?)
         `;
-        const { results: monthlyTrend } = await env.DB.prepare(`
+        const { results: monthlyTrendResults } = await env.DB.prepare(`
             SELECT 
                 strftime('%Y-%m', work_date) as month,
                 SUM(spec) as totalOvertime,
@@ -161,18 +208,40 @@ export const onRequestGet = async (context: any) => {
             ORDER BY month ASC
         `).bind(yearStartStr, yearEndStr, companyId, yearStartStr, yearEndStr, companyId).all();
 
+        // [New] Trend Comparison (Current vs Previous Month)
+        const prevMonthStr = format(new Date(tYear, tMonth - 2, 1)).slice(0, 7);
+        const currentMonthTotalOt = totalSpecialHrs * 60;
+        const prevMonthData = (monthlyTrendResults || []).find((r: any) => r.month === prevMonthStr) as any;
+        const prevMonthTotalOt = prevMonthData ? prevMonthData.totalOvertime : 0;
+
+        let overtimeChangePercentage = 0;
+        if (prevMonthTotalOt > 0) {
+            overtimeChangePercentage = Math.round(((currentMonthTotalOt - prevMonthTotalOt) / prevMonthTotalOt) * 100);
+        } else if (currentMonthTotalOt > 0) {
+            overtimeChangePercentage = 100;
+        }
 
         return new Response(JSON.stringify({
             success: true,
             summary: {
                 totalEmployees: userStats.size,
-                totalOvertimeMinutes: totalSpecialHrs * 60, // Passed as minutes (161 * 60)
+                totalOvertimeMinutes: totalSpecialHrs * 60,
                 totalWorkMinutes: totalRegularHrs * 60,
                 avgWorkMinutes: userStats.size > 0 ? ((totalRegularHrs + totalSpecialHrs) / userStats.size) * 60 : 0
             },
+            complianceRisk: {
+                highRiskCount: riskEmployees.size,
+                warningCount: warningEmployees.size
+            },
+            departmentOvertime: departmentOvertime,
+            previousMonthComparison: {
+                overtimeChangePercentage: overtimeChangePercentage
+            },
             topUsers: top5,
             weeklyTrend: weeklyTrend,
-            monthlyTrend: monthlyTrend
+            monthlyTrend: monthlyTrendResults,
+            anomalies: anomalies,
+            anomalyCount: anomalyCount
         }), { headers: { "Content-Type": "application/json" } });
 
     } catch (e: any) {

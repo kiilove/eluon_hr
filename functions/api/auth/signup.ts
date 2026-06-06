@@ -115,6 +115,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         });
 
     } catch (e) {
-        return new Response(JSON.stringify({ error: (e as Error).message }), { status: 500 });
+        console.error("[Signup] Unexpected error:", e);
+        return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500 });
     }
 };

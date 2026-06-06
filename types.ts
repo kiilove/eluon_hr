@@ -7,7 +7,9 @@ export enum LogStatus {
   REST = 'REST',
   SPECIAL = 'SPECIAL',
   OTHER = 'OTHER',
-  BRIDGE_DAY = 'BRIDGE_DAY'
+  BRIDGE_DAY = 'BRIDGE_DAY',
+  RESIGNED = 'RESIGNED',
+  PRE_JOIN = 'PRE_JOIN'
 }
 
 export enum WorkType {
@@ -75,6 +77,9 @@ export interface ProcessedWorkLog {
   logStatus?: LogStatus;
   correctionMemo?: string; // Added
   note?: string;
+  isExemptFromOvertime?: boolean; // [New] Flag for OT Simulation/Exclusion
+  targetStartTime?: string; // [New] Explict target for UI Snap Display
+  targetEndTime?: string; // [New] Explicit target for UI Snap Display
   candidates?: Employee[]; // Added for Duplicate Resolution
 }
 
@@ -142,9 +147,17 @@ export interface Employee {
   email?: string;
   phone?: string;
   source?: string;
-  is_TF?: boolean; // Added
-  profile_image?: string; // Base64 or URL
-  current_status?: string; // Derived field
+  is_TF?: boolean;
+  is_pregnant?: boolean; // [New] Pregnancy Management
+  discretionary_history?: any[]; // [New] Discretionary History records
+  pregnancy_reduced_start_time?: string; // e.g. "10:00"
+  pregnancy_reduced_end_time?: string; // e.g. "17:00"
+  pregnancy_reduced_start_date?: string; // e.g. "2024-01-01"
+  pregnancy_reduced_end_date?: string; // e.g. "2024-12-31"
+  join_date?: string; // [New] Entrance Date (YYYY-MM-DD)
+  initial_wage?: number; // [New] For Unified Registration
+  profile_image?: string;
+  current_status?: string;
   created_at?: number;
   last_synced_at?: number;
 }
@@ -194,6 +207,12 @@ export interface TimeRecord {
   originalIndex?: number;
 }
 
+export interface ManualAction {
+  id: string;
+  label: string;
+  deductionMinutes: number;
+}
+
 export interface CleansingSettings {
   startBufferMinutes: number;
   endBufferMinutes: number;
@@ -203,6 +222,7 @@ export interface CleansingSettings {
   maxWeeklyHours: number; // e.g. 52
   enforceCap: boolean;
   safetyRandomness: boolean;
+  manualActions: ManualAction[];
 }
 
 export interface WeekStat {
@@ -211,4 +231,11 @@ export interface WeekStat {
   auditMinutes: number;
   isViolation: boolean;
   status: 'safe' | 'warning' | 'danger';
+}
+
+export interface ApiResponse<T = any> {
+  success: boolean;
+  data: T;
+  message?: string;
+  error?: string;
 }

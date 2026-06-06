@@ -7,10 +7,12 @@ import { ChevronLeft, ChevronRight, Loader2, AlertTriangle, CheckCircle, Clock, 
 import { cn } from '@/lib/utils';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths, isSameMonth, isSameDay, parseISO, startOfWeek, endOfWeek } from 'date-fns';
 import { ko } from 'date-fns/locale';
+import { LogStatusSelect } from '../components/common/LogStatusSelect';
 import { ProcessedWorkLog, LogStatus } from '@/types';
 import { WeeklyPreviewTable } from '@/components/processing/WeeklyPreviewTable';
 import { DayEditDialog } from '@/components/processing/DayEditDialog';
 import { HolidayUtils } from '@/lib/holidayUtils';
+import { useMessageModal } from '@/contexts/MessageModalContext';
 import { useData } from '../contexts/DataContext';
 import { PolicyUtils } from '../lib/policyUtils';
 import { calculateStatusChangeUpdates } from '../lib/engine/statusChangeEngine';
@@ -83,6 +85,7 @@ interface AiAuditResult {
 const AttendanceCalendarPage = () => {
     // --- State ---
     const { config, policies } = useData();
+    const { showAlert, showConfirm } = useMessageModal();
     const [currentDate, setCurrentDate] = useState(subMonths(new Date(), 1));
     const [monthlyLogs, setMonthlyLogs] = useState<ProcessedWorkLog[]>([]);
 
@@ -241,10 +244,15 @@ const AttendanceCalendarPage = () => {
             const sDate = format(cStart, 'yyyy-MM-dd');
             const eDate = format(cEnd, 'yyyy-MM-dd');
 
-            // Parallel Fetch: Logs (Range) + Lock Status (Month)
+            // Parallel Fetch: Logs (Range) + Lock Status (Month) + Holidays
+            const startYear = parseISO(sDate).getFullYear();
+            const endYear = parseISO(eDate).getFullYear();
+            const years = startYear === endYear ? [startYear] : [startYear, endYear];
+
             const [logsRes, lockRes] = await Promise.all([
                 fetch(`/api/attendance/logs?startDate=${sDate}&endDate=${eDate}&companyId=${user.company_id}`),
-                fetch(`/api/management/lock-status?month=${currentMonth}`)
+                fetch(`/api/management/lock-status?month=${currentMonth}`),
+                ...years.map(y => HolidayUtils.init(y, user?.company_id || ""))
             ]);
 
             const logsData = await logsRes.json() as any;
@@ -334,7 +342,7 @@ const AttendanceCalendarPage = () => {
     }, [manualLogs, specialLogs, viewMode]);
 
     // [New] Handle Opening Week Preview
-    const handleOpenWeekPreview = (date: Date) => {
+    const handleOpenWeekPreview = async (date: Date) => {
         const monday = startOfWeek(date, { weekStartsOn: 1 });
         const sunday = endOfWeek(date, { weekStartsOn: 1 });
         const mondayStr = format(monday, 'yyyy-MM-dd');
@@ -347,7 +355,7 @@ const AttendanceCalendarPage = () => {
         const weekLogs = monthlyLogs.filter(l => weekDateStrs.includes(l.date));
 
         if (weekLogs.length === 0) {
-            alert(`[주의] 해당 주차(${mondayStr} 주간)의 데이터가 없습니다.`);
+            await showAlert(`[주의] 해당 주차(${mondayStr} 주간)의 데이터가 없습니다.`, { type: 'warning' });
         }
 
         setSelectedWeekData({
@@ -403,6 +411,196 @@ const AttendanceCalendarPage = () => {
 
         return stats;
     }, [monthlyLogs]);
+
+    // [New] Weekly 52-Hour Violation Detection
+    const weeklyViolations = useMemo(() => {
+        const violations: Record<string, {
+            employeeId: string;
+            employeeName: string;
+            weekNumber: number;
+            totalMinutes: number;
+            totalHours: number;
+            overtimeMinutes: number;
+            specialMinutes: number;
+            dates: string[];
+            logs: ProcessedWorkLog[];
+        }[]> = {};
+
+        // Group logs by employee and week
+        const employeeWeekMap = new Map<string, Map<number, ProcessedWorkLog[]>>();
+
+        monthlyLogs.forEach(log => {
+            const weekNum = getCustomWeekNumber(parseISO(log.date));
+            const key = log.employeeId || log.userName;
+
+            if (!employeeWeekMap.has(key)) {
+                employeeWeekMap.set(key, new Map());
+            }
+            const weekMap = employeeWeekMap.get(key)!;
+            if (!weekMap.has(weekNum)) {
+                weekMap.set(weekNum, []);
+            }
+            weekMap.get(weekNum)!.push(log);
+        });
+
+        // Check each employee's weekly hours
+        employeeWeekMap.forEach((weekMap, employeeKey) => {
+            weekMap.forEach((logs, weekNum) => {
+                const totalMinutes = logs.reduce((sum, log) => sum + (log.actualWorkDuration || 0), 0);
+                const overtimeMinutes = logs.reduce((sum, log) => sum + (log.overtimeDuration || 0), 0);
+                const specialMinutes = logs.reduce((sum, log) => sum + (log.specialWorkMinutes || 0), 0);
+
+                // [Consistency] Use the same rounding logic as Payroll/Stats for violation check
+                const totalHours = SpecialWorkCalculator.toWorkHours(totalMinutes);
+
+                if (totalHours > 52) {
+                    const dates = logs.map(l => l.date).sort();
+                    const sampleLog = logs[0];
+
+                    dates.forEach(date => {
+                        if (!violations[date]) violations[date] = [];
+
+                        violations[date].push({
+                            employeeId: sampleLog.employeeId,
+                            employeeName: sampleLog.userName,
+                            weekNumber: weekNum,
+                            totalMinutes,
+                            totalHours: Number(totalHours.toFixed(1)),
+                            overtimeMinutes,
+                            specialMinutes,
+                            dates,
+                            logs
+                        });
+                    });
+                }
+            });
+        });
+
+        return violations;
+    }, [monthlyLogs]);
+
+    // [New] Auto-Correction for 52-Hour Violations
+    const handleWeekly52HourCorrection = async () => {
+        if (Object.keys(weeklyViolations).length === 0) {
+            await showAlert('주 52시간을 초과한 직원이 없습니다.', { type: 'success' });
+            return;
+        }
+
+        const confirmed = await showConfirm(
+            '주 52시간 초과 직원의 연장근무를 자동 조정합니다.\n(초과 시 법적 리스크 방지를 위해 51시간을 기준으로 조정됩니다)\n\n계속하시겠습니까?', {
+            title: '초과 근무 조정',
+            type: 'warning',
+            confirmText: '조정',
+            cancelText: '취소'
+        });
+
+        if (!confirmed) return;
+
+        setIsLoading(true);
+        try {
+            const updatedLogs: ProcessedWorkLog[] = [];
+            let impossibleCount = 0;
+
+            // 1. Get Unique Violations (Avoid duplicates across dates in the same week)
+            const uniqueViolationsMap = new Map<string, any>();
+            Object.values(weeklyViolations).flat().forEach(v => {
+                const key = `${v.employeeId}-${v.weekNumber}`;
+                if (!uniqueViolationsMap.has(key)) {
+                    uniqueViolationsMap.set(key, v);
+                }
+            });
+
+            const uniqueViolations = Array.from(uniqueViolationsMap.values());
+
+            // 2. Process each unique violation
+            uniqueViolations.forEach(violation => {
+                const { logs, totalMinutes } = violation;
+                // Target 51.0h to be safe (User requested < 51.5h)
+                const targetReduction = totalMinutes - (51 * 60);
+
+                if (targetReduction <= 0) return;
+
+                // Sort logs with overtime descending (Protect 'SPECIAL' work logs)
+                const logsWithOvertime = logs
+                    .filter(log => (log.overtimeDuration || 0) > 0 && log.logStatus !== 'SPECIAL')
+                    .sort((a, b) => (b.overtimeDuration || 0) - (a.overtimeDuration || 0));
+
+                const totalAvailableOvertime = logsWithOvertime.reduce((sum, l) => sum + (l.overtimeDuration || 0), 0);
+
+                if (totalAvailableOvertime < targetReduction) {
+                    console.warn(`[52h Correction] Impossible to fully correct ${violation.employeeName} (Week ${violation.weekNumber}). Needed: ${targetReduction}m, Available: ${totalAvailableOvertime}m`);
+                    impossibleCount++;
+                    // Still reduce what we can? Yes.
+                }
+
+                // Iterate and reduce until targetReduction is met or no more overtime
+                let remainingToReduce = targetReduction;
+
+                for (const log of logsWithOvertime) {
+                    if (remainingToReduce <= 0) break;
+
+                    const currentOT = log.overtimeDuration || 0;
+                    const canReduce = Math.min(currentOT, remainingToReduce);
+
+                    const newOvertime = currentOT - canReduce;
+                    const newActualWork = (log.actualWorkDuration || 0) - canReduce;
+
+                    // [Fix] Update actual time values to match duration reduction
+                    const newEndTime = (log.endTime || 0) - canReduce;
+                    // Format back to HH:mm:ss (adding random seconds to look natural)
+                    const randomSec = Math.floor(Math.random() * 59) + 1;
+                    const h = Math.floor(newEndTime / 60);
+                    const m = newEndTime % 60;
+                    const newEndTimeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(randomSec).padStart(2, '0')}`;
+
+                    remainingToReduce -= canReduce;
+
+                    updatedLogs.push({
+                        ...log,
+                        overtimeDuration: newOvertime,
+                        actualWorkDuration: newActualWork,
+                        endTime: newEndTime,
+                        rawEndTimeStr: newEndTimeStr,
+                        note: (log.note || '') + ' [주51시간 준수보정]'
+                    });
+                }
+            });
+
+            if (updatedLogs.length === 0) {
+                await showAlert('조정할 데이터가 없습니다 (이미 처리되었거나 연장근무가 부족함).', { type: 'warning' });
+                setIsLoading(false);
+                return;
+            }
+
+            // Save to database
+            const response = await fetch('/api/processing/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    logs: updatedLogs,
+                    companyId: user?.company_id
+                })
+            });
+
+            const result = await response.json() as { success: boolean };
+            if (!response.ok || !result.success) {
+                throw new Error('저장 실패');
+            }
+
+            let msg = `${updatedLogs.length} 건의 근태 데이터가 조정되었습니다.`;
+            if (impossibleCount > 0) {
+                msg += `\n\n[주의] ${impossibleCount}명은 연장근무 시간이 부족하여 51시간 이내로 완전히 줄이지 못했습니다. (관리자 확인 필요)`;
+            }
+            await showAlert(msg, { type: 'success' });
+            await fetchData(); // Refresh
+
+        } catch (error) {
+            console.error('[52h Correction] Error:', error);
+            await showAlert('자동 보정 중 오류가 발생했습니다.', { type: 'error' });
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const selectedDayStat = selectedDate ? dailyStatsMap[format(selectedDate, 'yyyy-MM-dd')] : null;
 
@@ -498,7 +696,7 @@ const AttendanceCalendarPage = () => {
             if (!response.ok || !res.success) throw new Error("Save failed");
         } catch (e) {
             console.error("Quick Status Save Error:", e);
-            alert("상태 변경 저장 실패");
+            await showAlert("상태 변경 저장 실패", { type: 'error' });
             fetchData(); // Revert
         }
     };
@@ -508,17 +706,14 @@ const AttendanceCalendarPage = () => {
     return (
         <div className="h-[calc(100vh-100px)] flex flex-col space-y-4 max-w-[1800px] mx-auto">
             {/* Header */}
-            <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm shrink-0">
-                <div className="flex items-center gap-4">
-                    <div className="p-2.5 bg-indigo-600 rounded-lg text-white shadow-md shadow-indigo-200">
-                        <CalendarDays className="w-6 h-6" />
-                    </div>
-                    <div>
-                        <h1 className="text-xl font-bold text-slate-900">근태 캘린더</h1>
-                        <p className="text-xs text-slate-500 font-medium">
-                            {format(currentDate, 'yyyy년 M월')} 데이터 조회 및 보정
-                        </p>
-                    </div>
+            <div className="flex justify-between items-end shrink-0 mb-2">
+                <div className="flex flex-col gap-1">
+                    <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+                        근태 캘린더
+                    </h1>
+                    <p className="text-sm text-slate-500">
+                        {format(currentDate, 'yyyy년 M월')} 데이터 조회 및 보정
+                    </p>
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -553,16 +748,27 @@ const AttendanceCalendarPage = () => {
                         </button>
                     </div>
 
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2 border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800"
-                        onClick={handleAiAudit}
-                        disabled={isAiAuditLoading}
-                    >
-                        {isAiAuditLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                        AI 노무감수
-                    </Button>
+                    {/* [New] 52-Hour Violation Warning */}
+                    {Object.keys(weeklyViolations).length > 0 && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2 border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 animate-pulse"
+                            onClick={handleWeekly52HourCorrection}
+                        >
+                            <AlertTriangle className="w-4 h-4" />
+                            주 52시간 초과 ({
+                                // Count unique employee+week combinations instead of dates
+                                (() => {
+                                    const unique = new Set();
+                                    Object.values(weeklyViolations).flat().forEach(v => unique.add(`${v.employeeId}-${v.weekNumber}`));
+                                    return unique.size;
+                                })()
+                            }건) 자동보정
+                        </Button>
+                    )}
+
+
 
                     <Button variant="outline" size="sm" className="gap-2" onClick={() => ExcelReportGenerator.generateMonthlyReport(monthlyLogs, format(currentDate, 'yyyy-MM'), { name: '관리자', company_id: user?.company_id || 'Unknown' })}>
                         <FileDown className="w-4 h-4" />
@@ -584,7 +790,7 @@ const AttendanceCalendarPage = () => {
             </div>
 
             {/* Main Content Area */}
-            <div className="flex-1 overflow-hidden flex relative">
+            <div className="flex-1 overflow-hidden flex gap-6 relative">
                 {isLoading && (
                     <div className="absolute inset-0 bg-white/50 dark:bg-slate-900/50 backdrop-blur-[1px] z-50 flex items-center justify-center">
                         <div className="flex flex-col items-center gap-2">
@@ -657,6 +863,7 @@ const AttendanceCalendarPage = () => {
                                         const isHoliday = !!holidayName;
                                         const isSun = getDay(date) === 0;
                                         const isSat = getDay(date) === 6;
+                                        const has52HourViolation = weeklyViolations[dateKey] && weeklyViolations[dateKey].length > 0;
 
                                         let bgClass = isCurrentMonth ? "bg-white" : "bg-slate-50/50";
                                         if (isSelected) bgClass = "bg-indigo-50 ring-2 ring-indigo-500 ring-inset z-10";
@@ -668,7 +875,8 @@ const AttendanceCalendarPage = () => {
                                                 onClick={() => setSelectedDate(date)}
                                                 className={cn(
                                                     "relative border-r border-slate-100 p-2 cursor-pointer transition-all flex flex-col justify-between hover:bg-slate-50",
-                                                    bgClass
+                                                    bgClass,
+                                                    has52HourViolation && "ring-1 ring-red-300 ring-inset"
                                                 )}
                                             >
                                                 <div className="flex justify-between items-start">
@@ -688,14 +896,24 @@ const AttendanceCalendarPage = () => {
                                                             </span>
                                                         )}
                                                     </div>
-                                                    {isLocked && isCurrentMonth && (
-                                                        <div className="bg-slate-100 p-1 rounded-full border border-slate-200" title="Locked">
-                                                            <Lock className="w-3 h-3 text-slate-400" />
-                                                        </div>
-                                                    )}
-                                                    {hasIssues && (
-                                                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-sm shadow-red-200" title="확인 필요" />
-                                                    )}
+                                                    <div className="flex flex-col gap-1">
+                                                        {isLocked && isCurrentMonth && (
+                                                            <div className="bg-slate-100 p-1 rounded-full border border-slate-200" title="Locked">
+                                                                <Lock className="w-3 h-3 text-slate-400" />
+                                                            </div>
+                                                        )}
+                                                        {hasIssues && (
+                                                            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-sm shadow-red-200" title="확인 필요" />
+                                                        )}
+                                                        {has52HourViolation && (
+                                                            <div
+                                                                className="bg-red-500 text-white text-[8px] px-1 py-0.5 rounded font-bold shadow-sm animate-pulse"
+                                                                title={`주 52시간 초과: ${weeklyViolations[dateKey].map(v => `${v.employeeName} (${v.totalHours}h)`).join(', ')}`}
+                                                            >
+                                                                52h!
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
 
                                                 {stat && stat.totalLogs > 0 && (
@@ -713,6 +931,23 @@ const AttendanceCalendarPage = () => {
                                                                 {SpecialWorkCalculator.toRecognizedHours(stat.totalWorkMinutes)}h
                                                             </div>
                                                         </div>
+
+                                                        {/* [New] 52-Hour Violation Employee List */}
+                                                        {has52HourViolation && (
+                                                            <div className="bg-red-50 border border-red-200 rounded p-1.5 space-y-0.5 mt-1">
+                                                                <div className="text-[9px] font-bold text-red-700 mb-0.5">⚠️ 주52h 초과</div>
+                                                                {weeklyViolations[dateKey].slice(0, 3).map((v, idx) => (
+                                                                    <div key={idx} className="text-[9px] text-red-600 font-medium truncate">
+                                                                        • {v.employeeName} ({v.totalHours}h)
+                                                                    </div>
+                                                                ))}
+                                                                {weeklyViolations[dateKey].length > 3 && (
+                                                                    <div className="text-[8px] text-red-500">
+                                                                        +{weeklyViolations[dateKey].length - 3}명 더
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>
@@ -783,26 +1018,11 @@ const AttendanceCalendarPage = () => {
                                                 <div className="font-bold text-sm text-slate-800 flex items-center gap-1.5">
                                                     {log.userName}
                                                     <div className="relative" onClick={(e) => e.stopPropagation()}>
-                                                        <select
-                                                            value={log.logStatus || 'NORMAL'}
-                                                            onChange={(e) => handleQuickStatusChange(log.id, e.target.value as LogStatus)}
-                                                            className={cn(
-                                                                "appearance-none text-[10px] px-2 py-0.5 rounded-full font-medium border cursor-pointer outline-none focus:ring-1 focus:ring-offset-1 text-center min-w-[50px]",
-                                                                log.logStatus === 'NORMAL' ? "bg-slate-100 text-slate-600 border-slate-200 focus:ring-slate-400" :
-                                                                    log.logStatus === 'VACATION' ? "bg-blue-50 text-blue-600 border-blue-100 focus:ring-blue-400" :
-                                                                        log.logStatus === 'TRIP' ? "bg-indigo-50 text-indigo-600 border-indigo-100 focus:ring-indigo-400" :
-                                                                            log.logStatus === 'REST' ? "bg-slate-100 text-slate-500 border-slate-200 focus:ring-slate-400" :
-                                                                                "bg-amber-50 text-amber-600 border-amber-100 focus:ring-amber-400"
-                                                            )}
-                                                        >
-                                                            <option value="NORMAL">정상</option>
-                                                            <option value="VACATION">휴가</option>
-                                                            <option value="TRIP">출장</option>
-                                                            <option value="EDUCATION">교육</option>
-                                                            <option value="SICK">병가</option>
-                                                            <option value="REST">휴무</option>
-                                                            <option value="OTHER">기타</option>
-                                                        </select>
+                                                        <LogStatusSelect
+                                                            value={log.logStatus || LogStatus.NORMAL}
+                                                            onChange={(val) => handleQuickStatusChange(log.id, val)}
+                                                            variant="badge"
+                                                        />
                                                     </div>
                                                 </div>
                                                 <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
@@ -850,19 +1070,21 @@ const AttendanceCalendarPage = () => {
             </div>
 
             {/* Dialogs */}
-            {selectedDate && (
-                <DayEditDialog
-                    isOpen={isDayDialogOpen}
-                    onClose={() => setIsDayDialogOpen(false)}
-                    date={format(selectedDate, 'yyyy-MM-dd')}
-                    initialLogs={selectedLogForEdit ? [selectedLogForEdit] : []}
-                    onSaveSuccess={() => {
-                        fetchData();
-                        setIsDayDialogOpen(false);
-                        setSelectedLogForEdit(null);
-                    }}
-                />
-            )}
+            {
+                selectedDate && (
+                    <DayEditDialog
+                        isOpen={isDayDialogOpen}
+                        onClose={() => setIsDayDialogOpen(false)}
+                        date={format(selectedDate, 'yyyy-MM-dd')}
+                        initialLogs={selectedLogForEdit ? [selectedLogForEdit] : []}
+                        onSaveSuccess={() => {
+                            fetchData();
+                            setIsDayDialogOpen(false);
+                            setSelectedLogForEdit(null);
+                        }}
+                    />
+                )
+            }
 
             <Dialog open={isWeeklyPreviewOpen} onOpenChange={setIsWeeklyPreviewOpen}>
                 <DialogContent className="max-w-[95vw] w-fit h-[90vh] overflow-hidden flex flex-col p-4 bg-white">

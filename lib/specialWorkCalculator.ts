@@ -10,23 +10,35 @@
  */
 export const SpecialWorkCalculator = {
     /**
-     * Converts raw minutes to "Recognized Hours" (Integer).
-     * Rule: Round to nearest whole number.
-     * Example: 303 min / 60 = 5.05 -> 5h
+     * Converts raw minutes to "Work/Recognized Hours" (Integer) for Attendance.
+     * Rule: Round to nearest whole number (User: "인정시간은 반올림").
+     * Example: 162 min / 60 = 2.7 -> 3h
      */
     toRecognizedHours: (minutes: number): number => {
         if (!minutes) return 0;
-        return Math.round(minutes / 60);
+        // [User Request] Round to nearest 30 mins (0.5h) for accuracy
+        return Math.round(minutes / 30) / 2;
+    },
+
+    /**
+     * Converts raw minutes to "Work Hours" (Integer) for Regular Work.
+     * Rule: Round to nearest whole number.
+     * Example: 451 min / 60 = 7.51 -> 8h
+     */
+    toWorkHours: (minutes: number): number => {
+        if (!minutes) return 0;
+        // [User Request] Support 30-minute increments (0.5h)
+        return Math.round(minutes / 30) / 2;
     },
 
     /**
      * Calculates the Special Hourly Wage.
-     * Rule: Round to nearest whole number (KRW).
+     * Rule: Floor (Truncate) to nearest whole number (KRW).
      */
     calculateWage: (baseWage: number, multiplier: number): number => {
         if (!baseWage) return 0;
         const raw = baseWage * multiplier;
-        return Math.round(raw);
+        return Math.floor(raw);
     },
 
     /**

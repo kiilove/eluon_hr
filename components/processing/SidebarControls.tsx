@@ -1,12 +1,12 @@
 import React from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Search, ArrowUpDown, Users, AlertTriangle, Clock, Plane, Filter, ArrowRight, CheckCircle2, Save, Sparkles } from 'lucide-react';
+import { Search, ArrowUpDown, Users, AlertTriangle, Clock, Plane, Filter, ArrowRight, CheckCircle2, Save, Sparkles, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LogStatus } from "../../types";
 
 type SortOption = 'NAME' | 'DEPT' | 'TITLE';
-type SidebarTab = 'ALL' | 'MANUAL_CHECK' | 'OVERTIME' | 'VACATION' | 'TF_ONLY';
+type SidebarTab = 'ALL' | 'MANUAL_CHECK' | 'OVERTIME' | 'VACATION' | 'TF_ONLY' | 'WEEK_VACATION';
 
 interface SidebarControlsProps {
     isReadOnly: boolean;
@@ -22,7 +22,8 @@ interface SidebarControlsProps {
         MANUAL_CHECK: number;
         OVERTIME: number;
         VACATION: number;
-        TF_ONLY: number; // Added to match usage
+        TF_ONLY: number;
+        WEEK_VACATION: number; // [New]
     };
     setStep: (step: 1 | 2 | 3 | 4) => void;
     isProcessing: boolean;
@@ -31,6 +32,8 @@ interface SidebarControlsProps {
     hasV3Data?: boolean;
     handleTfAutoCorrection?: () => void;
     onGlobalNightCorrection?: () => void; // Kept as optional
+    onConfirmAllWeekVacation?: () => void; // [NEW] 
+    onResyncRoster?: () => void; // [NEW]
     // Deprecated legacy props - kept optional or remove if not used
     onAutoCorrect?: () => void;
     onReset?: () => void;
@@ -43,6 +46,7 @@ interface SidebarControlsProps {
         vacation: number;
     };
     onMoveToStep4?: () => void; // [NEW] Link to Logic
+    onApplyNaturalOvertime?: () => void; // [NEW]
 }
 
 export const SidebarControls: React.FC<SidebarControlsProps> = ({
@@ -62,7 +66,10 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
     hasV3Data,
     handleTfAutoCorrection,
     onGlobalNightCorrection,
-    onMoveToStep4
+    onConfirmAllWeekVacation,
+    onResyncRoster,
+    onMoveToStep4,
+    onApplyNaturalOvertime
 }) => {
     return (
         <div className="w-full lg:w-72 shrink-0 space-y-4 lg:sticky lg:top-6 h-fit">
@@ -107,10 +114,15 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
                         { id: 'MANUAL_CHECK', label: '수동 확인 필요', icon: AlertTriangle, color: 'text-amber-600', count: filterCounts.MANUAL_CHECK },
                         { id: 'OVERTIME', label: '연장 근무자', icon: Clock, color: 'text-purple-600', count: filterCounts.OVERTIME },
                         { id: 'VACATION', label: '휴가/출장', icon: Plane, color: 'text-sky-600', count: filterCounts.VACATION },
-                        { id: 'TF_ONLY', label: '전략 인력', icon: Sparkles, color: 'text-indigo-600', count: filterCounts.TF_ONLY }
+                        { id: 'TF_ONLY', label: '전략 인력', icon: Sparkles, color: 'text-indigo-600', count: filterCounts.TF_ONLY },
+                        { id: 'WEEK_VACATION', label: '주간 전체 휴공무', icon: Filter, color: 'text-blue-600', count: filterCounts.WEEK_VACATION }
                     ]
                         .filter(tab => {
-                            // in Step 3, hide Manual Check and Vacation
+                            // In Step 2, hide Overtime (it's for Step 3)
+                            if (step === 2) {
+                                return tab.id !== 'OVERTIME';
+                            }
+                            // In Step 3, show only All and Overtime
                             if (step === 3) {
                                 return tab.id === 'ALL' || tab.id === 'OVERTIME';
                             }
@@ -151,15 +163,29 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
                     {isReadOnly ? '다음 단계' : '작업 완료'}
                 </h3>
                 {isReadOnly ? (
-                    <Button
-                        onClick={() => {
-                            setStep(3);
-                            handleTabChange('ALL');
-                        }}
-                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg py-6 text-base"
-                    >
-                        연장근로 관리 <ArrowRight className="ml-2 w-5 h-5" />
-                    </Button>
+                    <>
+                        <Button
+                            onClick={() => {
+                                setStep(3);
+                                handleTabChange('ALL');
+                            }}
+                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg py-6 text-base mb-4"
+                        >
+                            연장근로 관리 <ArrowRight className="ml-2 w-5 h-5" />
+                        </Button>
+                        <div className="h-px bg-slate-200 my-2" />
+                        <div className="space-y-2">
+                            <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider pl-1">데이터 동기화</h4>
+                            <Button
+                                onClick={onResyncRoster}
+                                className="w-full justify-start gap-2 border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                                variant="outline"
+                            >
+                                <RefreshCw className="w-4 h-4" />
+                                직원 명부 재동기화 (Sync ID)
+                            </Button>
+                        </div>
+                    </>
                 ) : (
                     <>
                         {step === 3 ? (
@@ -167,22 +193,27 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
                                 <div className="space-y-4">
                                     <div className="space-y-2">
                                         <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider pl-1">관리 도구</h4>
-                                        <Button
-                                            onClick={handleOvertimeCorrection}
-                                            className={cn(
-                                                "w-full justify-start shadow-sm transition-all",
-                                                hasV3Data
-                                                    ? "bg-white border text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                                                    : "bg-orange-600 hover:bg-orange-700 text-white shadow-md py-6 text-base"
-                                            )}
-                                            variant={hasV3Data ? "outline" : "default"}
-                                        >
-                                            <div className={cn("p-1 rounded-full mr-2", hasV3Data ? "bg-slate-100" : "bg-white/20")}>
-                                                <CheckCircle2 className={cn("w-4 h-4", hasV3Data ? "text-slate-500" : "text-white")} />
-                                            </div>
-                                            {hasV3Data ? "연장근로 재조치" : "연장근로 조치 실행"}
-                                        </Button>
 
+                                        {/* Step 3 Only: Overtime Management */}
+                                        {step === 3 && (
+                                            <Button
+                                                onClick={handleOvertimeCorrection}
+                                                className={cn(
+                                                    "w-full justify-start shadow-sm transition-all",
+                                                    hasV3Data
+                                                        ? "bg-white border text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                                                        : "bg-orange-600 hover:bg-orange-700 text-white shadow-md py-6 text-base"
+                                                )}
+                                                variant={hasV3Data ? "outline" : "default"}
+                                            >
+                                                <div className={cn("p-1 rounded-full mr-2", hasV3Data ? "bg-slate-100" : "bg-white/20")}>
+                                                    <CheckCircle2 className={cn("w-4 h-4", hasV3Data ? "text-slate-500" : "text-white")} />
+                                                </div>
+                                                {hasV3Data ? "연장근로 재조치" : "연장근로 조치 실행"}
+                                            </Button>
+                                        )}
+
+                                        {/* Available in Step 2 & 3: Global/TF Corrections */}
                                         {onGlobalNightCorrection && (
                                             <Button
                                                 className="w-full justify-start gap-2 border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50"
@@ -192,7 +223,6 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
                                                 <div className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-200 text-xs font-medium text-indigo-700 dark:bg-indigo-800 dark:text-indigo-300">N</div>
                                                 야간 근무 일괄 확인
                                             </Button>
-
                                         )}
 
                                         {handleTfAutoCorrection && (
@@ -203,6 +233,20 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
                                             >
                                                 <div className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-200 text-xs font-medium text-amber-700 dark:bg-amber-800 dark:text-amber-300">TF</div>
                                                 전략 인력 자동 확인
+                                            </Button>
+                                        )}
+
+                                        {/* Step 3 Only: Natural Overtime */}
+                                        {step === 3 && onApplyNaturalOvertime && (
+                                            <Button
+                                                className="w-full justify-start gap-2 border-pink-200 bg-pink-50 text-pink-700 hover:bg-pink-100"
+                                                variant="outline"
+                                                onClick={onApplyNaturalOvertime}
+                                            >
+                                                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-pink-200 text-xs font-medium text-pink-700">
+                                                    <Sparkles className="w-3 h-3" />
+                                                </div>
+                                                포괄임금 야근 적용
                                             </Button>
                                         )}
                                     </div>
@@ -225,11 +269,36 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
                                         </>
                                     )}
                                 </div>
+                                <div className="h-px bg-slate-200 my-2" />
+                                <div className="space-y-2">
+                                    <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider pl-1">데이터 동기화</h4>
+                                    <Button
+                                        onClick={onResyncRoster}
+                                        className="w-full justify-start gap-2 border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                                        variant="outline"
+                                    >
+                                        <RefreshCw className="w-4 h-4" />
+                                        직원 명부 재동기화 (Sync ID)
+                                    </Button>
+                                </div>
                             </>
                         ) : (
                             <>
+                                {onConfirmAllWeekVacation && (
+                                    <Button
+                                        onClick={onConfirmAllWeekVacation}
+                                        className="w-full justify-start gap-2 border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 mb-4"
+                                        variant="outline"
+                                    >
+                                        <CheckCircle2 className="w-4 h-4" />
+                                        주간 전체 휴공무 일괄 확인
+                                    </Button>
+                                )}
                                 <Button
-                                    onClick={() => setStep(3)}
+                                    onClick={() => {
+                                        handleTabChange('ALL');
+                                        setStep(3);
+                                    }}
                                     disabled={filterCounts.MANUAL_CHECK > 0}
                                     className={cn(
                                         "w-full shadow-lg py-6 text-base transition-all",

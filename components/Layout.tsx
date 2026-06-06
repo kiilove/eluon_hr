@@ -4,6 +4,7 @@ import { cn } from '../lib/utils';
 import { Button } from './ui/button';
 import { useNavigate, useLocation } from 'react-router-dom';
 import React, { useEffect, useState } from 'react';
+import { useMessageModal } from '../contexts/MessageModalContext';
 
 interface LayoutProps {
     children: React.ReactNode;
@@ -12,6 +13,7 @@ interface LayoutProps {
 export const Layout = ({ children }: LayoutProps) => {
     const navigate = useNavigate();
     const [user, setUser] = useState<{ name: string; email: string; company_id: string } | null>(null);
+    const { showConfirm } = useMessageModal();
 
     useEffect(() => {
         const userStr = localStorage.getItem('user');
@@ -20,8 +22,15 @@ export const Layout = ({ children }: LayoutProps) => {
         }
     }, []);
 
-    const handleLogout = () => {
-        if (confirm('로그아웃 하시겠습니까?')) {
+    const handleLogout = async () => {
+        const confirmed = await showConfirm('로그아웃 하시겠습니까?', {
+            title: '로그아웃 확인',
+            type: 'question',
+            confirmText: '로그아웃',
+            cancelText: '취소'
+        });
+
+        if (confirmed) {
             localStorage.removeItem('user');
             navigate('/login');
         }
@@ -47,11 +56,9 @@ export const Layout = ({ children }: LayoutProps) => {
                     <p className="px-3 text-[11px] font-semibold text-muted-foreground mb-2 mt-6 uppercase tracking-wider">근태 관리</p>
                     <NavItem icon={<Upload size={16} />} label="근태 데이터 관리" to="/processing" />
                     <NavItem icon={<Briefcase size={16} />} label="특근 데이터 관리" to="/special-work-management" />
-                    <NavItem icon={<FileText size={16} />} label="최종 리포트" to="/reports" />
 
                     <p className="px-3 text-[11px] font-semibold text-muted-foreground mb-2 mt-6 uppercase tracking-wider">구성원 관리</p>
                     <NavItem icon={<Users size={16} />} label="직원 관리" to="/employees/regular" />
-                    <NavItem icon={<UserCheck size={16} />} label="임원 관리" to="/employees/executives" />
                 </nav>
 
                 <nav className="px-3 space-y-0.5 py-4 pb-8">
@@ -61,7 +68,6 @@ export const Layout = ({ children }: LayoutProps) => {
                     <p className="px-3 text-[11px] font-semibold text-muted-foreground mb-2 mt-6 uppercase tracking-wider">시스템 설정</p>
                     <NavItem icon={<DollarSign size={16} />} label="시급/수당 설정" to="/hourly-wage" />
                     <NavItem icon={<Settings size={16} />} label="환경 설정" to="/settings" />
-                    <NavItem icon={<UserPlus size={16} />} label="사번 일괄 업데이트(임시)" to="/temp/update-codes" />
                 </nav>
 
                 <div className="p-4 border-t border-border mt-auto">

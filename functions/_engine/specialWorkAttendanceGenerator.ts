@@ -234,8 +234,8 @@ export class SpecialWorkAttendanceGenerator {
         const result = new Array(slots).fill(0);
         const SLOT_CAP = 300; // 5 hours max per day (User Request)
 
-        // [CRITICAL] Distribute in HOUR increments first, then natural variation is added in createLog
-        // Convert to hours for distribution
+        // [CRITICAL] Distribute in HOUR increments
+        // Target is integer derived from pay (floor), we distribute using rounding logic
         const totalHours = Math.round(total / 60);
 
         // [Logic] If total is very small (e.g. <= 4h), put it all in one day regardless of persona
@@ -274,8 +274,8 @@ export class SpecialWorkAttendanceGenerator {
         // The allocatedDuration is the target "Actual Work".
 
         let breakMin = 0;
-        const break4h = options.breakTime4h ?? 30;
-        const break8h = options.breakTime8h ?? 60;
+        const break4h = options.breakTime4h !== undefined ? options.breakTime4h : 30;
+        const break8h = options.breakTime8h !== undefined ? options.breakTime8h : 60;
 
         // Determine Break Time based on Duration
         if (allocatedDuration >= 480) breakMin = break8h;
