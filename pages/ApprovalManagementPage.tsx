@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { format, subMonths, addMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns';
-import { AlertTriangle, CheckCircle, FileDown, Lock, Unlock, Loader2, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { AlertTriangle, CheckCircle, FileDown, Lock, Unlock, Loader2, Clock, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useData } from '../contexts/DataContext';
 import { ExcelReportGenerator } from '@/lib/excelReportGenerator';
 import { AttendanceMergeEngine } from '@/lib/engine/attendanceMergeEngine';
@@ -180,15 +181,41 @@ const ApprovalManagementPage = () => {
             <div className="flex justify-between items-center">
                 <h1 className="text-2xl font-bold tracking-tight text-slate-900">결재 관리</h1>
 
-                {/* Month Navigation (Calendar Style) */}
-                <div className="flex items-center gap-2 bg-white rounded-lg p-1 border border-slate-200 shadow-sm">
-                    <Button variant="ghost" size="icon" onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="h-8 w-8 hover:bg-slate-100 transition-all">
+                {/* Month Navigation (Calendar Style with Jump) */}
+                <div className="flex items-center gap-1 bg-white rounded-lg p-1 border border-slate-200 shadow-sm">
+                    <Button variant="ghost" size="icon" onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="h-8 w-8 hover:bg-slate-100 transition-all" title="이전 달">
                         <ChevronLeft className="w-4 h-4 text-slate-600" />
                     </Button>
-                    <span className="w-32 text-center font-bold text-slate-700 text-sm">
-                        {format(currentDate, 'yyyy.MM')}
-                    </span>
-                    <Button variant="ghost" size="icon" onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="h-8 w-8 hover:bg-slate-100 transition-all">
+                    
+                    <Select value={String(currentDate.getFullYear())} onValueChange={(year) => {
+                        const newDate = new Date(parseInt(year), currentDate.getMonth(), 1);
+                        setCurrentDate(newDate);
+                    }}>
+                        <SelectTrigger className="w-[90px] h-8 bg-transparent border-0 shadow-none hover:bg-slate-50 font-bold text-slate-700 text-xs gap-1 transition-all">
+                            <SelectValue placeholder="연도" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white border-slate-200">
+                            {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - 5 + i).map(year => (
+                                <SelectItem key={year} value={String(year)} className="hover:bg-slate-100 text-xs">{year}년</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+
+                    <Select value={String(currentDate.getMonth() + 1)} onValueChange={(month) => {
+                        const newDate = new Date(currentDate.getFullYear(), parseInt(month) - 1, 1);
+                        setCurrentDate(newDate);
+                    }}>
+                        <SelectTrigger className="w-[70px] h-8 bg-transparent border-0 shadow-none hover:bg-slate-50 font-bold text-slate-700 text-xs gap-1 transition-all">
+                            <SelectValue placeholder="월" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white border-slate-200">
+                            {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
+                                <SelectItem key={month} value={String(month)} className="hover:bg-slate-100 text-xs">{month}월</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+
+                    <Button variant="ghost" size="icon" onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="h-8 w-8 hover:bg-slate-100 transition-all" title="다음 달">
                         <ChevronRight className="w-4 h-4 text-slate-600" />
                     </Button>
                 </div>

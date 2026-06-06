@@ -48,12 +48,42 @@ export const DayEditDialog: React.FC<DayEditDialogProps> = ({ isOpen, onClose, d
             const start = isStart ? minutes : log.startTime;
             const end = isStart ? log.endTime : minutes;
 
-            // [Policy Aware] Apply Sanp & Calculation Logic
+            // [Policy Aware] Apply Snap & Calculation Logic
             const effectivePolicy = PolicyUtils.getPolicyForDate(log.date, policies);
             const activeConfig = effectivePolicy ? PolicyUtils.toGlobalConfig(effectivePolicy) : config;
 
-            const { actualWork, totalDuration, breakDuration } = calculateActualWork(start, end, activeConfig);
-            const overtime = Math.max(0, actualWork - (8 * 60)); // Default 8h for overtime threshold
+            let actualWork = 0;
+            let totalDuration = 0;
+            let breakDuration = 0;
+            let overtime = 0;
+
+            if (log.workType === 'ELASTIC') {
+                const targetStartStr = log.targetStartTime || "09:00";
+                const targetEndStr = log.targetEndTime || "18:00";
+                const targetStartMin = TimeUtils.timeToMinutes(targetStartStr);
+                const targetEndMin = TimeUtils.timeToMinutes(targetEndStr);
+
+                const tempConfig: GlobalConfig = {
+                    ...activeConfig,
+                    standardStartTime: targetStartStr,
+                    standardEndTime: targetEndStr,
+                    clockInCutoffTime: TimeUtils.minutesToColonFormat(targetStartMin - 14),
+                    clockOutCutoffTime: TimeUtils.minutesToColonFormat(targetEndMin + 14),
+                    lateClockInGraceMinutes: 0
+                };
+
+                const calc = calculateActualWork(start, end, tempConfig);
+                actualWork = Math.round(calc.actualWork / 30) * 30;
+                totalDuration = calc.totalDuration;
+                breakDuration = calc.breakDuration;
+                overtime = 0; // Exempt
+            } else {
+                const calc = calculateActualWork(start, end, activeConfig);
+                actualWork = calc.actualWork;
+                totalDuration = calc.totalDuration;
+                breakDuration = calc.breakDuration;
+                overtime = Math.max(0, actualWork - (8 * 60));
+            }
 
             setModifiedIds(prevIds => new Set(prevIds).add(id));
 

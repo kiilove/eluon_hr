@@ -506,10 +506,39 @@ const TimeEditButton = ({ log, onUpdateLog, children, type = 'start' }: { log: P
         const newStartTime = TimeUtils.timeToMinutes(startTimeInput);
         const newEndTime = TimeUtils.timeToMinutes(endTimeInput);
 
-        // Calculate durations (Simple Logic)
         // Calculate durations using shared logic (Snap Applied)
-        const { actualWork, totalDuration, breakDuration } = calculateActualWork(newStartTime, newEndTime, config);
-        const overtimeDuration = Math.max(0, actualWork - 8 * 60);
+        let actualWork = 0;
+        let totalDuration = 0;
+        let breakDuration = 0;
+        let overtimeDuration = 0;
+
+        if (log.workType === 'ELASTIC') {
+            const targetStartStr = log.targetStartTime || "09:00";
+            const targetEndStr = log.targetEndTime || "18:00";
+            const targetStartMin = TimeUtils.timeToMinutes(targetStartStr);
+            const targetEndMin = TimeUtils.timeToMinutes(targetEndStr);
+
+            const tempConfig = {
+                ...config,
+                standardStartTime: targetStartStr,
+                standardEndTime: targetEndStr,
+                clockInCutoffTime: TimeUtils.minutesToColonFormat(targetStartMin - 14),
+                clockOutCutoffTime: TimeUtils.minutesToColonFormat(targetEndMin + 14),
+                lateClockInGraceMinutes: 0
+            };
+
+            const calc = calculateActualWork(newStartTime, newEndTime, tempConfig);
+            actualWork = Math.round(calc.actualWork / 30) * 30;
+            totalDuration = calc.totalDuration;
+            breakDuration = calc.breakDuration;
+            overtimeDuration = 0; // Exempt
+        } else {
+            const calc = calculateActualWork(newStartTime, newEndTime, config);
+            actualWork = calc.actualWork;
+            totalDuration = calc.totalDuration;
+            breakDuration = calc.breakDuration;
+            overtimeDuration = Math.max(0, actualWork - 8 * 60);
+        }
 
         const startStr = generateSafeTimeString(newStartTime, newStartTime, log.id + "manual-start-" + startTimeInput);
         const endStr = generateSafeTimeString(newEndTime, newEndTime, log.id + "manual-end-" + endTimeInput);

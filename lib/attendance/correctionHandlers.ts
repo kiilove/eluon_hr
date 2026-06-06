@@ -16,6 +16,11 @@ export const processNightCorrection = (
 ) => {
     let nightFixCount = 0;
     const finalLogs = sourceLogs.map(log => {
+        // [보호막] 재량근무자 및 임산부(연장근무 면제 대상자)는 야간 보정에서 스킵
+        if (log.isExemptFromOvertime || log.workType === 'ELASTIC') {
+            return log;
+        }
+
         // User Requirement: Clock-in between 00:00 (0) and 06:00 (360) is considered Night Work entry that needs cleansing
         // Also captures entries with calculated NightWorkDuration
         const isNightEntry = log.startTime >= 0 && log.startTime <= 360 && (log.startTime !== 0 || log.endTime !== 0);

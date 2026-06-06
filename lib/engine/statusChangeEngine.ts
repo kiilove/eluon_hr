@@ -61,6 +61,52 @@ export const calculateStatusChangeUpdates = (
         };
     };
 
+    const setDiscretionaryNormal = (targetStartStr: string, targetEndStr: string) => {
+        const targetStartMin = TimeUtils.timeToMinutes(targetStartStr);
+        const targetEndMin = TimeUtils.timeToMinutes(targetEndStr);
+
+        const seed = `${log.userName || log.userId || 'User'}-${log.date}`;
+        const rawStart = generateSafeTimeString(targetStartMin - 14, targetStartMin, seed + "-disc-start");
+        const rawEnd = generateSafeTimeString(targetEndMin, targetEndMin + 14, seed + "-disc-end");
+
+        const startMin = TimeUtils.timeToMinutes(rawStart.substring(0, 5));
+        const endMin = TimeUtils.timeToMinutes(rawEnd.substring(0, 5));
+
+        const tempConfig: GlobalConfig = {
+            ...config,
+            standardStartTime: targetStartStr,
+            standardEndTime: targetEndStr,
+            clockInCutoffTime: TimeUtils.minutesToColonFormat(targetStartMin - 14),
+            clockOutCutoffTime: TimeUtils.minutesToColonFormat(targetEndMin + 14),
+            lateClockInGraceMinutes: 0
+        };
+
+        const calc = calculateActualWork(startMin, endMin, tempConfig);
+        const roundedActualMinutes = Math.round(calc.actualWork / 30) * 30;
+
+        let note = log.note || "";
+        if (!note.includes("[재량근무 적용]")) {
+            note = note ? `${note}, [재량근무 적용]` : "[재량근무 적용]";
+        }
+
+        return {
+            startTime: calc.snappedStart,
+            endTime: calc.snappedEnd,
+            rawStartTimeStr: rawStart,
+            rawEndTimeStr: rawEnd,
+            totalDuration: calc.totalDuration,
+            breakDuration: calc.breakDuration,
+            actualWorkDuration: roundedActualMinutes,
+            overtimeDuration: 0,
+            isExemptFromOvertime: true,
+            targetStartTime: targetStartStr,
+            targetEndTime: targetEndStr,
+            workType: 'ELASTIC' as const,
+            status: 'NORMAL' as const,
+            note: note
+        };
+    };
+
     const setNaturalNormal = () => {
         // [Policy Aware] Generate realistic random times based on Config
         const standardStart = TimeUtils.timeToMinutes(config.standardStartTime || "09:00");
@@ -104,6 +150,13 @@ export const calculateStatusChangeUpdates = (
     }
 
     if (newStatus === LogStatus.SPECIAL) {
+        if (log.workType === 'ELASTIC' && log.targetStartTime && log.targetEndTime) {
+            if (log.startTime === 0 && log.endTime === 0) {
+                return { ...updates, ...setDiscretionaryNormal(log.targetStartTime, log.targetEndTime) };
+            } else {
+                return { ...updates, status: 'NORMAL' as const };
+            }
+        }
         // If currently empty (0), set to standard 9-6 as a baseline for Special Work
         if (log.startTime === 0 && log.endTime === 0) {
             return { ...updates, ...setStandard9to6() };
@@ -113,6 +166,9 @@ export const calculateStatusChangeUpdates = (
     }
 
     if (newStatus === LogStatus.NORMAL) {
+        if (log.workType === 'ELASTIC' && log.targetStartTime && log.targetEndTime) {
+            return { ...updates, ...setDiscretionaryNormal(log.targetStartTime, log.targetEndTime) };
+        }
         // ALWAYS regenerate natural normal times when manually switching to NORMAL
         return { ...updates, ...setNaturalNormal() };
     }

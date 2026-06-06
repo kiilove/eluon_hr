@@ -81,7 +81,20 @@ export const onRequestGet = async (context: any) => {
             ORDER BY l.work_date ASC
         `).bind(companyId, startDate, endDate).all();
 
-        // 2. Fetch Special Logs (special_work_logs)
+        // 2. Fetch discretionary history for company employees
+        const { results: discretionaryRecords } = await env.DB.prepare(`
+            SELECT h.* FROM employee_discretionary_history h
+            JOIN regular_employees e ON h.employee_id = e.id
+            WHERE e.company_id = ?
+        `).bind(companyId).all();
+
+        const discMap = new Map<string, any[]>();
+        (discretionaryRecords || []).forEach((r: any) => {
+            if (!discMap.has(r.employee_id)) {
+                discMap.set(r.employee_id, []);
+            }
+            discMap.get(r.employee_id)!.push(r);
+        });
 
 
         // 3. Fetch Resignation Data to Filter Logs
@@ -126,32 +139,47 @@ export const onRequestGet = async (context: any) => {
         }
 
         // Helper to transform
-        const transformLog = (r: any, type: 'MANUAL' | 'SPECIAL'): ProcessedWorkLog => ({
-            id: r.id,
-            employeeId: r.employee_id,
-            userId: r.user_name || r.employee_id || 'Unknown',
-            userName: r.user_name || r.employee_id || 'Unknown',
-            userTitle: r.user_title || '',
-            department: r.department || '',
-            date: r.work_date,
-            startTime: TimeUtils.timeToMinutes(r.start_time),
-            endTime: TimeUtils.timeToMinutes(r.end_time),
-            rawStartTimeStr: r.start_time,
-            rawEndTimeStr: r.end_time,
-            actualWorkDuration: r.actual_work_minutes || 0,
-            overtimeDuration: type === 'MANUAL' ? (r.overtime_minutes || 0) : (r.actual_work_minutes || 0),
-            status: type === 'MANUAL' ? r.status : 'NORMAL',
-            // [Fix] Legacy Data Mapping:
-            logStatus: (r.log_status === 'NORMAL' && r.status === 'REST') ? LogStatus.REST : (r.log_status as LogStatus),
-            note: r.persona || '',
-            isHoliday: false,
-            // [Fix] Missing Fields
-            totalDuration: (TimeUtils.timeToMinutes(r.end_time) - TimeUtils.timeToMinutes(r.start_time)) || 0,
-            breakDuration: r.break_minutes || 0,
-            nightWorkDuration: 0,
-            restDuration: 0,
-            workType: 'BASIC'
-        });
+        const transformLog = (r: any, type: 'MANUAL' | 'SPECIAL'): ProcessedWorkLog => {
+            const histories = discMap.get(r.employee_id) || [];
+            const activeDisc = histories.find((h: any) => {
+                const startLimit = (h.start_date && h.start_date !== "null" && h.start_date !== "undefined") ? h.start_date : null;
+                const endLimit = (h.end_date && h.end_date !== "null" && h.end_date !== "undefined") ? h.end_date : null;
+                return (!startLimit || r.work_date >= startLimit) && (!endLimit || r.work_date <= endLimit);
+            });
+
+            const targetStartTime = activeDisc ? (activeDisc.start_time || "09:00") : undefined;
+            const targetEndTime = activeDisc ? (activeDisc.end_time || "18:00") : undefined;
+
+            return {
+                id: r.id,
+                employeeId: r.employee_id,
+                userId: r.user_name || r.employee_id || 'Unknown',
+                userName: r.user_name || r.employee_id || 'Unknown',
+                userTitle: r.user_title || '',
+                department: r.department || '',
+                date: r.work_date,
+                startTime: TimeUtils.timeToMinutes(r.start_time),
+                endTime: TimeUtils.timeToMinutes(r.end_time),
+                rawStartTimeStr: r.start_time,
+                rawEndTimeStr: r.end_time,
+                actualWorkDuration: r.actual_work_minutes || 0,
+                overtimeDuration: type === 'MANUAL' ? (r.overtime_minutes || 0) : (r.actual_work_minutes || 0),
+                status: type === 'MANUAL' ? r.status : 'NORMAL',
+                // [Fix] Legacy Data Mapping:
+                logStatus: (r.log_status === 'NORMAL' && r.status === 'REST') ? LogStatus.REST : (r.log_status as LogStatus),
+                note: r.persona || '',
+                isHoliday: false,
+                // [Fix] Missing Fields
+                totalDuration: (TimeUtils.timeToMinutes(r.end_time) - TimeUtils.timeToMinutes(r.start_time)) || 0,
+                breakDuration: r.break_minutes || 0,
+                nightWorkDuration: 0,
+                restDuration: 0,
+                workType: activeDisc ? 'ELASTIC' : 'BASIC',
+                isExemptFromOvertime: activeDisc ? true : undefined,
+                targetStartTime,
+                targetEndTime
+            };
+        };
 
         const manualLogs = manualResults.map((r: any) => transformLog(r, 'MANUAL'));
         const specialLogs = specialResults.map((r: any) => transformLog(r, 'SPECIAL'));

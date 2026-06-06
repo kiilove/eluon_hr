@@ -13,7 +13,7 @@ import { snapTime, generateSafeTimeString, calculateActualWork } from "./correct
 
 export const WorkHourCalculator = {
 
-    processDailyLog: (log: RawCommuteLog, config?: GlobalConfig): ProcessedWorkLog => {
+    processDailyLog: (log: RawCommuteLog & { workType?: string, targetStartTime?: string, targetEndTime?: string }, config?: GlobalConfig): ProcessedWorkLog => {
         // Default Config if missing
         if (!config) {
             config = {
@@ -29,16 +29,49 @@ export const WorkHourCalculator = {
         let rawStart = TimeUtils.timeToMinutes(log.clockIn);
         let rawEnd = TimeUtils.timeToMinutes(log.clockOut);
 
-        // Initial Snap & Calculation (Replaces manual snap + calculateHours)
-        let {
-            snappedStart: processedStart,
-            snappedEnd: processedEnd,
-            actualWork,
-            totalDuration,
-            breakDuration,
-            overtimeDuration,
-            nightWorkDuration
-        } = calculateActualWork(rawStart, rawEnd, config);
+        let actualWork = 0;
+        let totalDuration = 0;
+        let breakDuration = 0;
+        let overtimeDuration = 0;
+        let nightWorkDuration = 0;
+        let processedStart = rawStart;
+        let processedEnd = rawEnd;
+
+        const isDiscretionary = log.workType === 'ELASTIC' && log.targetStartTime && log.targetEndTime;
+
+        if (isDiscretionary) {
+            const targetStartStr = log.targetStartTime!;
+            const targetEndStr = log.targetEndTime!;
+            const targetStartMin = TimeUtils.timeToMinutes(targetStartStr);
+            const targetEndMin = TimeUtils.timeToMinutes(targetEndStr);
+
+            const tempConfig: GlobalConfig = {
+                ...config,
+                standardStartTime: targetStartStr,
+                standardEndTime: targetEndStr,
+                clockInCutoffTime: TimeUtils.minutesToColonFormat(targetStartMin - 14),
+                clockOutCutoffTime: TimeUtils.minutesToColonFormat(targetEndMin + 14),
+                lateClockInGraceMinutes: 0
+            };
+
+            const calc = calculateActualWork(rawStart, rawEnd, tempConfig);
+            actualWork = Math.round(calc.actualWork / 30) * 30;
+            totalDuration = calc.totalDuration;
+            breakDuration = calc.breakDuration;
+            processedStart = calc.snappedStart;
+            processedEnd = calc.snappedEnd;
+            overtimeDuration = 0; // Exempt
+            nightWorkDuration = calc.nightWorkDuration || 0;
+        } else {
+            const calc = calculateActualWork(rawStart, rawEnd, config);
+            actualWork = calc.actualWork;
+            totalDuration = calc.totalDuration;
+            breakDuration = calc.breakDuration;
+            processedStart = calc.snappedStart;
+            processedEnd = calc.snappedEnd;
+            overtimeDuration = calc.overtimeDuration;
+            nightWorkDuration = calc.nightWorkDuration || 0;
+        }
 
         // If 'disableSnap' is true, we revert to raw (Though calculateActualWork enforces strict rules usually)
         // If 'disableSnap' is true, we revert to raw FOR DISPLAY ONLY
